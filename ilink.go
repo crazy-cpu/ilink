@@ -190,7 +190,7 @@ func (ilink ILink) tagReadResp(channelId string, status ChannelStatus) error {
 	return nil
 }
 
-func NewMqtt(Ip string, port int, pluginId string) *ILink {
+func NewMqtt(Ip string, port int, qos byte, pluginId string) *ILink {
 	if mqttiLink != nil {
 		return mqttiLink
 	}
@@ -199,7 +199,7 @@ func NewMqtt(Ip string, port int, pluginId string) *ILink {
 	if err != nil {
 		return nil
 	}
-	mqttiLink = &ILink{pluginId: pluginId, cli: c, protocol: ProtocolMqtt, buffer: make(chan subscribe, 100)}
+	mqttiLink = &ILink{pluginId: pluginId, cli: c, protocol: ProtocolMqtt, buffer: make(chan subscribe, 100), qos: qos}
 	return mqttiLink
 }
 
