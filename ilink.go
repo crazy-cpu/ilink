@@ -189,12 +189,12 @@ func (ilink ILink) tagReadResp(channelId string, status ChannelStatus) error {
 	return nil
 }
 
-func NewMqtt(address string, pluginId string) *ILink {
+func NewMqtt(Ip string, port int, pluginId string) *ILink {
 	if mqttiLink != nil {
 		return mqttiLink
 	}
 
-	c, err := newMqtt(address)
+	c, err := newMqtt(Ip, port)
 	if err != nil {
 		return nil
 	}

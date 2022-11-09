@@ -7,6 +7,7 @@ import (
 	emqx "github.com/eclipse/paho.mqtt.golang"
 	"github.com/tidwall/gjson"
 	"reflect"
+	"strconv"
 	"time"
 )
 
@@ -27,8 +28,9 @@ const (
 	Quality = TagsQuality(0)
 )
 
-func newMqtt(addr string, auth ...string) (emqx.Client, error) {
-	ops := emqx.NewClientOptions().AddBroker("tcp://" + addr).
+func newMqtt(ip string, port int, auth ...string) (emqx.Client, error) {
+	p := strconv.Itoa(port)
+	ops := emqx.NewClientOptions().AddBroker("tcp://" + ip + ":" + p).
 		SetTLSConfig(&tls.Config{InsecureSkipVerify: true}).
 		SetAutoReconnect(true).SetProtocolVersion(4).
 		SetCleanSession(true)
