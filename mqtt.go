@@ -66,8 +66,8 @@ type baseResWithData struct {
 	data      interface{} `json:"data"`
 }
 
-func (e emq) commandsSubscribe(c chan subscribe) {
-	e.client.Subscribe(downTopic+"/#", e.qos, func(client emqx.Client, message emqx.Message) {
+func (e emq) commandsSubscribe(pluginId string, c chan subscribe) {
+	e.client.Subscribe(downTopic+"/"+pluginId, e.qos, func(client emqx.Client, message emqx.Message) {
 		operate := gjson.Get(string(message.Payload()), "operate").String()
 		sub := subscribe{
 			Operate: command(operate),

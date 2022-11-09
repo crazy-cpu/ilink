@@ -20,8 +20,8 @@ const (
 )
 
 const (
-	upTopic   = "up/dev"
-	downTopic = "down/dev"
+	upTopic   = "up/bridge"
+	downTopic = "down/bridge"
 )
 
 var mqttiLink *ILink
@@ -51,10 +51,10 @@ type Communication interface {
 	TagUp() error                                                     //点位上报
 }
 
-func (ilink ILink) CommandsSubscribe() (c <-chan subscribe) {
+func (ilink ILink) CommandsSubscribe(pluginId string) (c <-chan subscribe) {
 	if ilink.protocol == ProtocolMqtt {
 		mqtt := emq{client: ilink.cli.(emqx.Client)}
-		mqtt.commandsSubscribe(ilink.buffer)
+		mqtt.commandsSubscribe(pluginId, ilink.buffer)
 		return ilink.buffer
 	}
 
