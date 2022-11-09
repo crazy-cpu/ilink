@@ -27,6 +27,7 @@ const (
 var mqttiLink *ILink
 
 type ILink struct {
+	pluginId string
 	cli      interface{}
 	protocol Protocol
 	buffer   chan subscribe
@@ -51,10 +52,10 @@ type Communication interface {
 	TagUp() error                                                     //点位上报
 }
 
-func (ilink ILink) CommandsSubscribe(pluginId string) (c <-chan subscribe) {
+func (ilink ILink) CommandsSubscribe() (c <-chan subscribe) {
 	if ilink.protocol == ProtocolMqtt {
-		mqtt := emq{client: ilink.cli.(emqx.Client)}
-		mqtt.commandsSubscribe(pluginId, ilink.buffer)
+		mqtt := emq{pluginId: ilink.pluginId, client: ilink.cli.(emqx.Client)}
+		mqtt.commandsSubscribe(ilink.buffer)
 		return ilink.buffer
 	}
 
@@ -81,7 +82,7 @@ func (ilink ILink) Connect(ver string) error {
 		return fmt.Errorf("client不允许为空")
 	}
 	if ilink.protocol == ProtocolMqtt {
-		mqtt := emq{client: ilink.cli.(emqx.Client)}
+		mqtt := emq{pluginId: ilink.pluginId, client: ilink.cli.(emqx.Client)}
 
 		if err := mqtt.connect(ver); err != nil {
 			return err
@@ -95,7 +96,7 @@ func (ilink ILink) SyncChannelTagStart() error {
 		return fmt.Errorf("client不允许为空")
 	}
 	if ilink.protocol == ProtocolMqtt {
-		mqtt := emq{client: ilink.cli.(emqx.Client)}
+		mqtt := emq{pluginId: ilink.pluginId, client: ilink.cli.(emqx.Client)}
 
 		if err := mqtt.syncChannelTagStart(); err != nil {
 			return err
@@ -109,7 +110,7 @@ func (ilink ILink) deleteChannelResponse() error {
 		return fmt.Errorf("client不允许为空")
 	}
 	if ilink.protocol == ProtocolMqtt {
-		mqtt := emq{client: ilink.cli.(emqx.Client)}
+		mqtt := emq{pluginId: ilink.pluginId, client: ilink.cli.(emqx.Client)}
 
 		if err := mqtt.deleteChannelRes(); err != nil {
 			return err
@@ -123,7 +124,7 @@ func (ilink ILink) deleteAllChannelResponse() error {
 		return fmt.Errorf("client不允许为空")
 	}
 	if ilink.protocol == ProtocolMqtt {
-		mqtt := emq{client: ilink.cli.(emqx.Client)}
+		mqtt := emq{pluginId: ilink.pluginId, client: ilink.cli.(emqx.Client)}
 
 		if err := mqtt.deleteAllChannelRes(); err != nil {
 			return err
@@ -137,7 +138,7 @@ func (ilink ILink) syncChannelTagEndResponse() error {
 		return fmt.Errorf("client不允许为空")
 	}
 	if ilink.protocol == ProtocolMqtt {
-		mqtt := emq{client: ilink.cli.(emqx.Client)}
+		mqtt := emq{pluginId: ilink.pluginId, client: ilink.cli.(emqx.Client)}
 
 		if err := mqtt.syncChannelTagEndResponse(); err != nil {
 			return err
@@ -151,7 +152,7 @@ func (ilink ILink) getChannelStatusRes(channelId string, status ChannelStatus) e
 		return fmt.Errorf("client不允许为空")
 	}
 	if ilink.protocol == ProtocolMqtt {
-		mqtt := emq{client: ilink.cli.(emqx.Client)}
+		mqtt := emq{pluginId: ilink.pluginId, client: ilink.cli.(emqx.Client)}
 
 		if err := mqtt.getChannelStatusRes(channelId, status); err != nil {
 			return err
@@ -165,7 +166,7 @@ func (ilink ILink) channelStatusUp(channelId string, status ChannelStatus) error
 		return fmt.Errorf("client不允许为空")
 	}
 	if ilink.protocol == ProtocolMqtt {
-		mqtt := emq{client: ilink.cli.(emqx.Client)}
+		mqtt := emq{pluginId: ilink.pluginId, client: ilink.cli.(emqx.Client)}
 
 		if err := mqtt.channelStatusUp(channelId, status); err != nil {
 			return err
@@ -179,7 +180,7 @@ func (ilink ILink) tagReadResp(channelId string, status ChannelStatus) error {
 		return fmt.Errorf("client不允许为空")
 	}
 	if ilink.protocol == ProtocolMqtt {
-		mqtt := emq{client: ilink.cli.(emqx.Client)}
+		mqtt := emq{pluginId: ilink.pluginId, client: ilink.cli.(emqx.Client)}
 
 		if err := mqtt.channelStatusUp(channelId, status); err != nil {
 			return err
@@ -188,7 +189,7 @@ func (ilink ILink) tagReadResp(channelId string, status ChannelStatus) error {
 	return nil
 }
 
-func NewMqtt(address string) *ILink {
+func NewMqtt(address string, pluginId string) *ILink {
 	if mqttiLink != nil {
 		return mqttiLink
 	}
@@ -197,7 +198,7 @@ func NewMqtt(address string) *ILink {
 	if err != nil {
 		return nil
 	}
-	mqttiLink = &ILink{cli: c, protocol: ProtocolMqtt, buffer: make(chan subscribe, 100)}
+	mqttiLink = &ILink{pluginId: pluginId, cli: c, protocol: ProtocolMqtt, buffer: make(chan subscribe, 100)}
 	return mqttiLink
 }
 

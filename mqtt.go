@@ -11,8 +11,9 @@ import (
 )
 
 type emq struct {
-	client emqx.Client
-	qos    byte
+	pluginId string
+	client   emqx.Client
+	qos      byte
 }
 
 type ChannelStatus uint8
@@ -47,27 +48,27 @@ func newMqtt(addr string, auth ...string) (emqx.Client, error) {
 }
 
 type baseReq struct {
-	operate   command     `json:"operate"`
-	operateId int         `json:"operateId"`
-	version   string      `json:"version"`
-	data      interface{} `json:"data"`
+	Operate   command     `json:"operate"`
+	OperateId int         `json:"operateId"`
+	Version   string      `json:"version"`
+	Data      interface{} `json:"data"`
 }
 
 type baseRes struct {
-	operate   command `json:"operate"`
-	operateId int     `json:"operateId"`
-	code      int     `json:"code"`
+	Operate   command `json:"operate"`
+	OperateId int     `json:"operateId"`
+	Code      int     `json:"code"`
 }
 
 type baseResWithData struct {
-	operate   command     `json:"operate"`
-	operateId int         `json:"operateId"`
-	code      int         `json:"code"`
-	data      interface{} `json:"data"`
+	Operate   command     `json:"operate"`
+	OperateId int         `json:"operateId"`
+	Code      int         `json:"code"`
+	Data      interface{} `json:"data"`
 }
 
-func (e emq) commandsSubscribe(pluginId string, c chan subscribe) {
-	e.client.Subscribe(downTopic+"/"+pluginId, e.qos, func(client emqx.Client, message emqx.Message) {
+func (e emq) commandsSubscribe(c chan subscribe) {
+	e.client.Subscribe(downTopic+"/"+e.pluginId, e.qos, func(client emqx.Client, message emqx.Message) {
 		operate := gjson.Get(string(message.Payload()), "operate").String()
 		sub := subscribe{
 			Operate: command(operate),
@@ -80,10 +81,10 @@ func (e emq) commandsSubscribe(pluginId string, c chan subscribe) {
 
 func (e emq) heartBeat() error {
 	h := baseReq{
-		operate:   CmdHeartBeat,
-		operateId: cmd[CmdHeartBeat],
-		version:   version,
-		data: map[string]int64{
+		Operate:   CmdHeartBeat,
+		OperateId: cmd[CmdHeartBeat],
+		Version:   version,
+		Data: map[string]int64{
 			"time":      time.Now().Unix(),
 			"runStatus": 2,
 		},
@@ -92,7 +93,7 @@ func (e emq) heartBeat() error {
 	if err != nil {
 		return err
 	}
-	if token := e.client.Publish(upTopic, e.qos, false, payload); token.Wait() && token.Error() != nil {
+	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, payload); token.Wait() && token.Error() != nil {
 		return err
 	}
 
@@ -105,10 +106,10 @@ func (e emq) connect(ver string) error {
 	}
 
 	connect := baseReq{
-		operate:   CmdConnect,
-		operateId: cmd[CmdConnect],
-		version:   version,
-		data: map[string]string{
+		Operate:   CmdConnect,
+		OperateId: cmd[CmdConnect],
+		Version:   version,
+		Data: map[string]string{
 			"pid":     "",
 			"version": ver,
 		},
@@ -117,8 +118,8 @@ func (e emq) connect(ver string) error {
 	if err != nil {
 		return err
 	}
-
-	if token := e.client.Publish(upTopic, e.qos, false, body); token.Wait() && token.Error() != nil {
+	fmt.Println("body:", string(body))
+	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
 		return err
 	}
 	return nil
@@ -141,7 +142,7 @@ func (e emq) syncChannelTagStart() error {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic, e.qos, false, body); token.Wait() && token.Error() != nil {
+	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
 		return err
 	}
 
@@ -150,9 +151,9 @@ func (e emq) syncChannelTagStart() error {
 
 func (e emq) syncChannelTagEndResponse() error {
 	base := baseRes{
-		operate:   CmdSyncChannelTagEndRes,
-		operateId: cmd[CmdSyncChannelTagEndRes],
-		code:      0,
+		Operate:   CmdSyncChannelTagEndRes,
+		OperateId: cmd[CmdSyncChannelTagEndRes],
+		Code:      0,
 	}
 
 	body, err := json.Marshal(base)
@@ -160,7 +161,7 @@ func (e emq) syncChannelTagEndResponse() error {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic, e.qos, false, body); token.Wait() && token.Error() != nil {
+	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
 		return err
 	}
 
@@ -169,16 +170,16 @@ func (e emq) syncChannelTagEndResponse() error {
 
 func (e emq) deleteChannelRes() error {
 	base := baseRes{
-		operate:   CmdDelAllChannelRes,
-		operateId: cmd[CmdDelAllChannelRes],
-		code:      0,
+		Operate:   CmdDelAllChannelRes,
+		OperateId: cmd[CmdDelAllChannelRes],
+		Code:      0,
 	}
 	body, err := json.Marshal(base)
 	if err != nil {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic, e.qos, false, body); token.Wait() && token.Error() != nil {
+	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
 		return err
 	}
 	return nil
@@ -186,16 +187,16 @@ func (e emq) deleteChannelRes() error {
 
 func (e emq) deleteAllChannelRes() error {
 	res := baseRes{
-		operate:   CmdDelAllChannelRes,
-		operateId: cmd[CmdDelAllChannelRes],
-		code:      0,
+		Operate:   CmdDelAllChannelRes,
+		OperateId: cmd[CmdDelAllChannelRes],
+		Code:      0,
 	}
 	body, err := json.Marshal(res)
 	if err != nil {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic, e.qos, false, body); token.Wait() && token.Error() != nil {
+	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
 		return err
 	}
 	return nil
@@ -237,7 +238,7 @@ func (e emq) getChannelStatusRes(channelId string, stat ChannelStatus) error {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic, e.qos, false, payload); token.Wait() && token.Error() != nil {
+	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, payload); token.Wait() && token.Error() != nil {
 		return err
 	}
 	return nil
@@ -254,10 +255,10 @@ func (e emq) tagWriteRes(channelId string) error {
 		Id: channelId,
 	})
 	base := baseResWithData{
-		operate:   CmdTagReadRes,
-		operateId: cmd[CmdTagReadRes],
-		code:      0,
-		data:      tags,
+		Operate:   CmdTagReadRes,
+		OperateId: cmd[CmdTagReadRes],
+		Code:      0,
+		Data:      tags,
 	}
 
 	payload, err := json.Marshal(base)
@@ -265,7 +266,7 @@ func (e emq) tagWriteRes(channelId string) error {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic, e.qos, false, payload); token.Wait() && token.Error() != nil {
+	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, payload); token.Wait() && token.Error() != nil {
 		return err
 	}
 
@@ -288,10 +289,10 @@ func (e emq) tagReadRes(channelId string, value string, quality byte) error {
 		Code: 0,
 	})
 	base := baseResWithData{
-		operate:   CmdTagReadRes,
-		operateId: cmd[CmdTagReadRes],
-		code:      0,
-		data:      tags,
+		Operate:   CmdTagReadRes,
+		OperateId: cmd[CmdTagReadRes],
+		Code:      0,
+		Data:      tags,
 	}
 
 	payload, err := json.Marshal(base)
@@ -299,7 +300,7 @@ func (e emq) tagReadRes(channelId string, value string, quality byte) error {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic, e.qos, false, payload); token.Wait() && token.Error() != nil {
+	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, payload); token.Wait() && token.Error() != nil {
 		return err
 	}
 
@@ -322,10 +323,10 @@ func (e emq) channelStatusUp(channelId string, status ChannelStatus) error {
 	})
 
 	base := baseResWithData{
-		operate:   CmdChannelStatusUp,
-		operateId: cmd[CmdChannelStatusUp],
-		code:      0,
-		data: map[string][]Status{
+		Operate:   CmdChannelStatusUp,
+		OperateId: cmd[CmdChannelStatusUp],
+		Code:      0,
+		Data: map[string][]Status{
 			"channels": tags,
 		},
 	}
@@ -335,7 +336,7 @@ func (e emq) channelStatusUp(channelId string, status ChannelStatus) error {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic, e.qos, false, payload); token.Wait() && token.Error() != nil {
+	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, payload); token.Wait() && token.Error() != nil {
 		return err
 	}
 
@@ -358,10 +359,10 @@ func (e emq) tagUp(channelId string, value string, quality byte) error {
 		Ts: time.Now().Unix(),
 	})
 	base := baseResWithData{
-		operate:   CmdTagUp,
-		operateId: cmd[CmdTagUp],
-		code:      0,
-		data:      tags,
+		Operate:   CmdTagUp,
+		OperateId: cmd[CmdTagUp],
+		Code:      0,
+		Data:      tags,
 	}
 
 	payload, err := json.Marshal(base)
@@ -369,7 +370,7 @@ func (e emq) tagUp(channelId string, value string, quality byte) error {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic, e.qos, false, payload); token.Wait() && token.Error() != nil {
+	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, payload); token.Wait() && token.Error() != nil {
 		return err
 	}
 
