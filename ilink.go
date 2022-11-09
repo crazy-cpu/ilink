@@ -27,7 +27,7 @@ const (
 var mqttiLink *ILink
 
 type ILink struct {
-	cli      any
+	cli      interface{}
 	protocol Protocol
 	buffer   chan subscribe
 }
