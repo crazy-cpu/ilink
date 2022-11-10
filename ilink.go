@@ -69,7 +69,7 @@ func (ilink ILink) HeartBeat() error {
 		return fmt.Errorf("client不允许为空")
 	}
 	if ilink.protocol == ProtocolMqtt {
-		mqtt := emq{client: ilink.cli.(emqx.Client), qos: ilink.qos}
+		mqtt := emq{pluginId: ilink.pluginId, client: ilink.cli.(emqx.Client), qos: ilink.qos}
 
 		if err := mqtt.heartBeat(); err != nil {
 			return err
