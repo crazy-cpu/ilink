@@ -6,6 +6,7 @@ import (
 	"fmt"
 	emqx "github.com/eclipse/paho.mqtt.golang"
 	"github.com/tidwall/gjson"
+	"os"
 	"reflect"
 	"strconv"
 	"time"
@@ -127,7 +128,7 @@ func (e emq) connect(ver string) error {
 		OperateId: cmd[CmdConnect],
 		Version:   version,
 		Data: map[string]string{
-			"pid":     "",
+			"pid":     strconv.Itoa(os.Getpid()),
 			"version": ver,
 		},
 	}
