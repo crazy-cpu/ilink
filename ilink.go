@@ -36,7 +36,7 @@ type ILink struct {
 
 type subscribe struct {
 	Operate   command
-	OperateId string
+	OperateId int64
 	Body      []byte
 }
 
@@ -107,7 +107,7 @@ func (ilink ILink) SyncChannelTagStart() error {
 	return nil
 }
 
-func (ilink ILink) deleteChannelResponse(operateId string) error {
+func (ilink ILink) deleteChannelResponse(operateId int64) error {
 	if ilink.cli == nil {
 		return fmt.Errorf("client不允许为空")
 	}
@@ -121,7 +121,7 @@ func (ilink ILink) deleteChannelResponse(operateId string) error {
 	return nil
 }
 
-func (ilink ILink) deleteAllChannelResponse(operateId string) error {
+func (ilink ILink) deleteAllChannelResponse(operateId int64) error {
 	if ilink.cli == nil {
 		return fmt.Errorf("client不允许为空")
 	}
@@ -135,7 +135,7 @@ func (ilink ILink) deleteAllChannelResponse(operateId string) error {
 	return nil
 }
 
-func (ilink ILink) syncChannelTagEndResponse(operateId string) error {
+func (ilink ILink) syncChannelTagEndResponse(operateId int64) error {
 	if ilink.cli == nil {
 		return fmt.Errorf("client不允许为空")
 	}

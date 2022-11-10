@@ -58,10 +58,10 @@ const (
 	CmdSyncOk                 = command("SYNC_OK")
 )
 
-var cmd map[command]int
+var cmd map[command]int64
 
 func init() {
-	cmd = map[command]int{
+	cmd = map[command]int64{
 		"HEART_BEAT":                 1,
 		"HEART_BEAT_RES":             2,
 		"CONNECT":                    3,

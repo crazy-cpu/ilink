@@ -52,20 +52,20 @@ func newMqtt(ip string, port int, auth ...string) (emqx.Client, error) {
 
 type baseReq struct {
 	Operate   command     `json:"operate"`
-	OperateId int         `json:"operateId"`
+	OperateId int64       `json:"operateId"`
 	Version   string      `json:"version"`
 	Data      interface{} `json:"data"`
 }
 
 type baseRes struct {
 	Operate   command `json:"operate"`
-	OperateId string  `json:"operateId"`
+	OperateId int64   `json:"operateId"`
 	Code      int     `json:"code"`
 }
 
 type baseResWithData struct {
 	Operate   command     `json:"operate"`
-	OperateId int         `json:"operateId"`
+	OperateId int64       `json:"operateId"`
 	Code      int         `json:"code"`
 	Data      interface{} `json:"data"`
 }
@@ -73,7 +73,7 @@ type baseResWithData struct {
 func (e emq) commandsSubscribe(c chan subscribe) {
 	e.client.Subscribe(downTopic+"/"+e.pluginId, e.qos, func(client emqx.Client, message emqx.Message) {
 		operate := gjson.Get(string(message.Payload()), "operate").String()
-		operateId := gjson.Get(string(message.Payload()), "operateId").String()
+		operateId := gjson.Get(string(message.Payload()), "operateId").Int()
 		switch command(operate) {
 		case CmdSyncChannelTagStart:
 			e.syncChannelTagStartResp(operateId)
@@ -145,7 +145,7 @@ func (e emq) connect(ver string) error {
 func (e emq) syncChannelTagStart() error {
 	type req struct {
 		Operate   command `json:"operate"`
-		OperateId int     `json:"operateId"`
+		OperateId int64   `json:"operateId"`
 		Version   string  `json:"version"`
 	}
 
@@ -166,7 +166,7 @@ func (e emq) syncChannelTagStart() error {
 	return nil
 }
 
-func (e emq) syncChannelTagStartResp(operateId string) error {
+func (e emq) syncChannelTagStartResp(operateId int64) error {
 	res := baseRes{
 		Operate:   CmdSyncChannelTagStartRes,
 		OperateId: operateId,
@@ -182,7 +182,7 @@ func (e emq) syncChannelTagStartResp(operateId string) error {
 	return nil
 }
 
-func (e emq) syncChannelTagEndResponse(operateId string) error {
+func (e emq) syncChannelTagEndResponse(operateId int64) error {
 	base := baseRes{
 		Operate:   CmdSyncChannelTagEndRes,
 		OperateId: operateId,
@@ -201,7 +201,7 @@ func (e emq) syncChannelTagEndResponse(operateId string) error {
 	return nil
 }
 
-func (e emq) syncChannelTagRes(operateId string) error {
+func (e emq) syncChannelTagRes(operateId int64) error {
 	base := baseRes{
 		Operate:   CmdSyncChannelTagRes,
 		OperateId: operateId,
@@ -220,7 +220,7 @@ func (e emq) syncChannelTagRes(operateId string) error {
 	return nil
 }
 
-func (e emq) deleteChannelRes(operateId string) error {
+func (e emq) deleteChannelRes(operateId int64) error {
 	base := baseRes{
 		Operate:   CmdDelChannelRes,
 		OperateId: operateId,
@@ -237,7 +237,7 @@ func (e emq) deleteChannelRes(operateId string) error {
 	return nil
 }
 
-func (e emq) deleteAllChannelRes(operateId string) error {
+func (e emq) deleteAllChannelRes(operateId int64) error {
 	res := baseRes{
 		Operate:   CmdDelAllChannelRes,
 		OperateId: operateId,
@@ -266,7 +266,7 @@ func (e emq) getChannelStatusRes(channelId string, stat ChannelStatus) error {
 
 	type status struct {
 		Operate   command    `json:"operate"`
-		OperateId int        `json:"operateId"`
+		OperateId int64      `json:"operateId"`
 		Code      int        `json:"code"`
 		Data      []channels `json:"data"`
 	}
