@@ -35,8 +35,9 @@ type ILink struct {
 }
 
 type subscribe struct {
-	Operate command
-	Body    []byte
+	Operate   command
+	OperateId string
+	Body      []byte
 }
 
 type Communication interface {
@@ -106,42 +107,42 @@ func (ilink ILink) SyncChannelTagStart() error {
 	return nil
 }
 
-func (ilink ILink) deleteChannelResponse() error {
+func (ilink ILink) deleteChannelResponse(operateId string) error {
 	if ilink.cli == nil {
 		return fmt.Errorf("client不允许为空")
 	}
 	if ilink.protocol == ProtocolMqtt {
 		mqtt := emq{pluginId: ilink.pluginId, client: ilink.cli.(emqx.Client), qos: ilink.qos}
 
-		if err := mqtt.deleteChannelRes(); err != nil {
+		if err := mqtt.deleteChannelRes(operateId); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (ilink ILink) deleteAllChannelResponse() error {
+func (ilink ILink) deleteAllChannelResponse(operateId string) error {
 	if ilink.cli == nil {
 		return fmt.Errorf("client不允许为空")
 	}
 	if ilink.protocol == ProtocolMqtt {
 		mqtt := emq{pluginId: ilink.pluginId, client: ilink.cli.(emqx.Client), qos: ilink.qos}
 
-		if err := mqtt.deleteAllChannelRes(); err != nil {
+		if err := mqtt.deleteAllChannelRes(operateId); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (ilink ILink) syncChannelTagEndResponse() error {
+func (ilink ILink) syncChannelTagEndResponse(operateId string) error {
 	if ilink.cli == nil {
 		return fmt.Errorf("client不允许为空")
 	}
 	if ilink.protocol == ProtocolMqtt {
 		mqtt := emq{pluginId: ilink.pluginId, client: ilink.cli.(emqx.Client), qos: ilink.qos}
 
-		if err := mqtt.syncChannelTagEndResponse(); err != nil {
+		if err := mqtt.syncChannelTagEndResponse(operateId); err != nil {
 			return err
 		}
 	}

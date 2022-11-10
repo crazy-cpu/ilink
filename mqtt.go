@@ -58,7 +58,7 @@ type baseReq struct {
 
 type baseRes struct {
 	Operate   command `json:"operate"`
-	OperateId int     `json:"operateId"`
+	OperateId string  `json:"operateId"`
 	Code      int     `json:"code"`
 }
 
@@ -72,11 +72,26 @@ type baseResWithData struct {
 func (e emq) commandsSubscribe(c chan subscribe) {
 	e.client.Subscribe(downTopic+"/"+e.pluginId, e.qos, func(client emqx.Client, message emqx.Message) {
 		operate := gjson.Get(string(message.Payload()), "operate").String()
-		sub := subscribe{
-			Operate: command(operate),
-			Body:    message.Payload(),
+		operateId := gjson.Get(string(message.Payload()), "operateId").String()
+		switch command(operate) {
+		case CmdSyncChannelTagStart:
+			e.syncChannelTagStartResp(operateId)
+		case CmdSyncChannelTag:
+			e.syncChannelTagRes(operateId)
+		case CmdSyncChannelTagEnd:
+			e.syncChannelTagEndResponse(operateId)
+		case CmdDelChannel:
+			e.deleteChannelRes(operateId)
+		case CmdDelAllChannelRes:
+			e.deleteAllChannelRes(operateId)
+		default:
+			sub := subscribe{
+				Operate:   command(operate),
+				OperateId: operateId,
+				Body:      message.Payload(),
+			}
+			c <- sub
 		}
-		c <- sub
 	})
 
 }
@@ -120,7 +135,6 @@ func (e emq) connect(ver string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("body:", string(body))
 	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
 		return err
 	}
@@ -151,10 +165,26 @@ func (e emq) syncChannelTagStart() error {
 	return nil
 }
 
-func (e emq) syncChannelTagEndResponse() error {
+func (e emq) syncChannelTagStartResp(operateId string) error {
+	res := baseRes{
+		Operate:   CmdSyncChannelTagStartRes,
+		OperateId: operateId,
+	}
+	body, err := json.Marshal(res)
+	if err != nil {
+		return err
+	}
+
+	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
+		return err
+	}
+	return nil
+}
+
+func (e emq) syncChannelTagEndResponse(operateId string) error {
 	base := baseRes{
 		Operate:   CmdSyncChannelTagEndRes,
-		OperateId: cmd[CmdSyncChannelTagEndRes],
+		OperateId: operateId,
 		Code:      0,
 	}
 
@@ -170,10 +200,29 @@ func (e emq) syncChannelTagEndResponse() error {
 	return nil
 }
 
-func (e emq) deleteChannelRes() error {
+func (e emq) syncChannelTagRes(operateId string) error {
 	base := baseRes{
-		Operate:   CmdDelAllChannelRes,
-		OperateId: cmd[CmdDelAllChannelRes],
+		Operate:   CmdSyncChannelTagRes,
+		OperateId: operateId,
+		Code:      0,
+	}
+
+	body, err := json.Marshal(base)
+	if err != nil {
+		return err
+	}
+
+	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (e emq) deleteChannelRes(operateId string) error {
+	base := baseRes{
+		Operate:   CmdDelChannelRes,
+		OperateId: operateId,
 		Code:      0,
 	}
 	body, err := json.Marshal(base)
@@ -187,10 +236,10 @@ func (e emq) deleteChannelRes() error {
 	return nil
 }
 
-func (e emq) deleteAllChannelRes() error {
+func (e emq) deleteAllChannelRes(operateId string) error {
 	res := baseRes{
 		Operate:   CmdDelAllChannelRes,
-		OperateId: cmd[CmdDelAllChannelRes],
+		OperateId: operateId,
 		Code:      0,
 	}
 	body, err := json.Marshal(res)
