@@ -35,7 +35,7 @@ type ILink struct {
 }
 
 type subscribe struct {
-	Operate   command
+	Operate   string
 	OperateId int64
 	Body      []byte
 }

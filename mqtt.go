@@ -75,19 +75,14 @@ func (e emq) commandsSubscribe(c chan subscribe) {
 		operate := gjson.Get(string(message.Payload()), "operate").String()
 		operateId := gjson.Get(string(message.Payload()), "operateId").Int()
 		switch command(operate) {
+		//不需要做任何操作的简单响应指令可放在这
 		case CmdSyncChannelTagStart:
 			e.syncChannelTagStartResp(operateId)
-		case CmdSyncChannelTag:
-			e.syncChannelTagRes(operateId)
 		case CmdSyncChannelTagEnd:
 			e.syncChannelTagEndResponse(operateId)
-		case CmdDelChannel:
-			e.deleteChannelRes(operateId)
-		case CmdDelAllChannelRes:
-			e.deleteAllChannelRes(operateId)
 		default:
 			sub := subscribe{
-				Operate:   command(operate),
+				Operate:   operate,
 				OperateId: operateId,
 				Body:      message.Payload(),
 			}
