@@ -41,17 +41,17 @@ type subscribe struct {
 }
 
 type Communication interface {
-	HeartBeat() error                                                 //心跳上报
-	Connect() error                                                   //插件连接网关
-	SyncChannelTagStart() error                                       //同步CHANNEL和TAG通知
-	SyncChannelTagEndResponse() error                                 //同步结束响应
-	DeleteChannelResponse() error                                     //删除单个通道响应
-	DeleteAllChannelResponse() error                                  //删除所有通道响应
-	GetChannelStatusRes(channelId string, status ChannelStatus) error //获取通道状态
-	ChannelStatusUp() error                                           //通道状态上报
-	TagWriteResp() error                                              //点位写入
-	TagReadResp() error                                               //点位读取
-	TagUp(channelId string, value string, quality byte) error         //点位上报
+	HeartBeat() error                                                       //心跳上报
+	Connect() error                                                         //插件连接网关
+	SyncChannelTagStart() error                                             //同步CHANNEL和TAG通知
+	SyncChannelTagEndResponse() error                                       //同步结束响应
+	DeleteChannelResponse() error                                           //删除单个通道响应
+	DeleteAllChannelResponse() error                                        //删除所有通道响应
+	GetChannelStatusRes(channelId string, status ChannelStatus) error       //获取通道状态
+	ChannelStatusUp() error                                                 //通道状态上报
+	TagWriteResp() error                                                    //点位写入
+	TagReadResp() error                                                     //点位读取
+	TagUp(channelId string, tagId string, value string, quality byte) error //点位上报
 }
 
 func (ilink ILink) CommandsSubscribe() (c <-chan subscribe) {
@@ -206,14 +206,14 @@ TagUp body
   ]
 }
 */
-func (ilink ILink) TagUp(channelId string, value string, quality byte) error {
+func (ilink ILink) TagUp(channelId string, tagId string, value string, quality byte) error {
 	if ilink.cli == nil {
 		return fmt.Errorf("client不允许为空")
 	}
 	if ilink.protocol == ProtocolMqtt {
 		mqtt := emq{pluginId: ilink.pluginId, client: ilink.cli.(emqx.Client), qos: ilink.qos}
 
-		if err := mqtt.tagUp(channelId, value, quality); err != nil {
+		if err := mqtt.tagUp(channelId, tagId, value, quality); err != nil {
 			return err
 		}
 	}

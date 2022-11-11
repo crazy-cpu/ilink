@@ -395,7 +395,7 @@ func (e emq) channelStatusUp(channelId string, status ChannelStatus) error {
 	return nil
 }
 
-func (e emq) tagUp(channelId string, value string, quality byte) error {
+func (e emq) tagUp(channelId string, TagId string, value string, quality byte) error {
 	type TagValue struct {
 		Id string `json:"id"`
 		V  string `json:"v"`
@@ -403,21 +403,35 @@ func (e emq) tagUp(channelId string, value string, quality byte) error {
 		Ts int64  `json:"ts"`
 	}
 
-	var tags []TagValue
-	tags = append(tags, TagValue{
-		Id: channelId,
-		V:  value,
-		Q:  quality,
-		Ts: time.Now().Unix(),
-	})
-	base := baseResWithData{
-		Operate:   CmdTagUp,
-		OperateId: cmd[CmdTagUp],
-		Code:      0,
-		Data:      tags,
+	type Data struct {
+		ChannelId string     `json:"channelId"`
+		Tags      []TagValue `json:"tags"`
 	}
 
-	payload, err := json.Marshal(base)
+	type Res struct {
+		Operate   command `json:"operate"`
+		OperateId int64   `json:"operateId"`
+		Version   string  `json:"version"`
+		Data      Data    `json:"data"`
+	}
+
+	res := Res{
+		Operate:   CmdTagUp,
+		OperateId: cmd[CmdTagUp],
+		Version:   "",
+		Data: Data{
+			ChannelId: channelId,
+			Tags: []TagValue{
+				{
+					Id: TagId,
+					V:  value,
+					Q:  quality,
+					Ts: time.Now().Unix(),
+				},
+			},
+		},
+	}
+	payload, err := json.Marshal(res)
 	if err != nil {
 		return err
 	}
