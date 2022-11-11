@@ -191,6 +191,36 @@ func (ilink ILink) tagReadResp(channelId string, status ChannelStatus) error {
 	return nil
 }
 
+/*
+TagUp body
+
+"data":{
+  "channelId":"",
+  "tags":[
+	{
+      "id":"",
+      "v":"",
+      "q":0,
+      "ts":163982312442
+    }
+  ]
+}
+*/
+func (ilink ILink) TagUp(channelId string, value string, quality byte) error {
+	if ilink.cli == nil {
+		return fmt.Errorf("client不允许为空")
+	}
+	if ilink.protocol == ProtocolMqtt {
+		mqtt := emq{pluginId: ilink.pluginId, client: ilink.cli.(emqx.Client), qos: ilink.qos}
+
+		if err := mqtt.tagUp(channelId, value, quality); err != nil {
+			return err
+		}
+	}
+	return nil
+	return nil
+}
+
 func NewMqtt(Ip string, port int, qos byte, pluginId string) *ILink {
 	if mqttiLink != nil {
 		return mqttiLink
