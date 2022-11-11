@@ -51,7 +51,7 @@ type Communication interface {
 	ChannelStatusUp() error                                           //通道状态上报
 	TagWriteResp() error                                              //点位写入
 	TagReadResp() error                                               //点位读取
-	TagUp() error                                                     //点位上报
+	TagUp(channelId string, value string, quality byte) error         //点位上报
 }
 
 func (ilink ILink) CommandsSubscribe() (c <-chan subscribe) {
@@ -217,7 +217,6 @@ func (ilink ILink) TagUp(channelId string, value string, quality byte) error {
 			return err
 		}
 	}
-	return nil
 	return nil
 }
 
