@@ -107,7 +107,7 @@ func (ilink ILink) SyncChannelTagStart() error {
 	return nil
 }
 
-func (ilink ILink) deleteChannelResponse(operateId int64) error {
+func (ilink ILink) DeleteChannelResponse(operateId int64) error {
 	if ilink.cli == nil {
 		return fmt.Errorf("client不允许为空")
 	}
@@ -121,7 +121,7 @@ func (ilink ILink) deleteChannelResponse(operateId int64) error {
 	return nil
 }
 
-func (ilink ILink) deleteAllChannelResponse(operateId int64) error {
+func (ilink ILink) DeleteAllChannelResponse(operateId int64) error {
 	if ilink.cli == nil {
 		return fmt.Errorf("client不允许为空")
 	}
