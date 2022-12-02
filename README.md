@@ -1,2 +1,2 @@
 # ilink
-杭州指令集科技有限公司 ILink协议SDK（go语言版本）
+杭州指令集智能科技有限公司 ILink协议SDK（go语言版本）
