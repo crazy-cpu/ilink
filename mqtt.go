@@ -9,17 +9,23 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"sync/atomic"
 	"time"
 )
 
 type emq struct {
-	pluginId string
-	client   emqx.Client
-	qos      byte
+	operateId int64
+	pluginId  string
+	client    emqx.Client
+	qos       byte
 }
 
 type ChannelStatus uint8
 type TagsQuality uint8
+
+var (
+	mq *emq
+)
 
 const (
 	ChannelStatusStopped = ChannelStatus(0)
@@ -70,6 +76,18 @@ type baseResWithData struct {
 	Data      interface{} `json:"data"`
 }
 
+func newEmq(pluginId string, client emqx.Client, qos byte) *emq {
+	if mq != nil {
+		return mq
+	}
+	return &emq{
+		operateId: 0,
+		pluginId:  pluginId,
+		client:    client,
+		qos:       qos,
+	}
+}
+
 func (e emq) commandsSubscribe(c chan subscribe) {
 	e.client.Subscribe(downTopic+"/"+e.pluginId, e.qos, func(client emqx.Client, message emqx.Message) {
 		operate := gjson.Get(string(message.Payload()), "operate").String()
@@ -92,10 +110,24 @@ func (e emq) commandsSubscribe(c chan subscribe) {
 
 }
 
+//func (e emq) connectWithRespTimeout(version string, t time.Duration) {
+//
+//	e.connect(version)
+//	e.client.Subscribe(downTopic+"/"+e.pluginId, e.qos, func(client emqx.Client, message emqx.Message) {
+//		operate := gjson.Get(string(message.Payload()), "operate").String()
+//		operateId := gjson.Get(string(message.Payload()), "operateId").Int()
+//		if command(operate) == CmdConnectACK {
+//
+//		}
+//	})
+//
+//	e.client.Unsubscribe(downTopic + "/" + e.pluginId)
+//}
+
 func (e emq) heartBeat() error {
 	h := baseReq{
 		Operate:   CmdHeartBeat,
-		OperateId: cmd[CmdHeartBeat],
+		OperateId: atomic.AddInt64(&e.operateId, 1),
 		Version:   version,
 		Data: map[string]int64{
 			"time":      time.Now().Unix(),
@@ -120,7 +152,7 @@ func (e emq) connect(ver string) error {
 
 	connect := baseReq{
 		Operate:   CmdConnect,
-		OperateId: cmd[CmdConnect],
+		OperateId: atomic.AddInt64(&e.operateId, 1),
 		Version:   version,
 		Data: map[string]string{
 			"pid":     strconv.Itoa(os.Getpid()),
@@ -137,6 +169,16 @@ func (e emq) connect(ver string) error {
 	return nil
 }
 
+//func (e emq) connectWithRespTimeOut(ver string, timeout time.Duration) error {
+//
+//	if err := e.connect(ver); err != nil {
+//		return err
+//	}
+//
+//	t := time.NewTimer(timeout * time.Second)
+//	e.commandsSubscribe()
+//}
+
 func (e emq) syncChannelTagStart() error {
 	type req struct {
 		Operate   command `json:"operate"`
@@ -146,7 +188,7 @@ func (e emq) syncChannelTagStart() error {
 
 	r := req{
 		Operate:   CmdSyncChannelTagStart,
-		OperateId: cmd[CmdSyncChannelTagStart],
+		OperateId: atomic.AddInt64(&e.operateId, 1),
 		Version:   version,
 	}
 	body, err := json.Marshal(r)
@@ -274,7 +316,7 @@ func (e emq) getChannelStatusRes(channelId string, stat ChannelStatus) error {
 	}
 	s := status{
 		Operate:   CmdGetChannelStatusRes,
-		OperateId: cmd[CmdGetChannelStatusRes],
+		OperateId: atomic.AddInt64(&e.operateId, 1),
 		Code:      0,
 		Data:      chans,
 	}
@@ -303,7 +345,7 @@ func (e emq) tagWriteRes(channelId string) error {
 	})
 	base := baseResWithData{
 		Operate:   CmdTagReadRes,
-		OperateId: cmd[CmdTagReadRes],
+		OperateId: atomic.AddInt64(&e.operateId, 1),
 		Code:      0,
 		Data:      tags,
 	}
@@ -337,7 +379,7 @@ func (e emq) tagReadRes(channelId string, value string, quality byte) error {
 	})
 	base := baseResWithData{
 		Operate:   CmdTagReadRes,
-		OperateId: cmd[CmdTagReadRes],
+		OperateId: atomic.AddInt64(&e.operateId, 1),
 		Code:      0,
 		Data:      tags,
 	}
@@ -371,7 +413,7 @@ func (e emq) channelStatusUp(channelId string, status ChannelStatus) error {
 
 	base := baseResWithData{
 		Operate:   CmdChannelStatusUp,
-		OperateId: cmd[CmdChannelStatusUp],
+		OperateId: atomic.AddInt64(&e.operateId, 1),
 		Code:      0,
 		Data: map[string][]Status{
 			"channels": tags,
@@ -412,7 +454,7 @@ func (e emq) tagUp(channelId string, TagId string, value string, quality byte) e
 
 	res := Res{
 		Operate:   CmdTagUp,
-		OperateId: cmd[CmdTagUp],
+		OperateId: atomic.AddInt64(&e.operateId, 1),
 		Version:   "",
 		Data: Data{
 			ChannelId: channelId,
