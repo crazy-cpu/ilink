@@ -3,6 +3,7 @@ package ilink
 import (
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	emqx "github.com/eclipse/paho.mqtt.golang"
 	"github.com/tidwall/gjson"
@@ -13,11 +14,19 @@ import (
 	"time"
 )
 
+var (
+	ErrOperateIdNotMatched = errors.New("operateId不匹配")
+	ErrTimeoutResponse     = errors.New("响应超时")
+)
+
 type emq struct {
-	operateId int64
-	pluginId  string
-	client    emqx.Client
-	qos       byte
+	operateId          int64
+	pluginId           string
+	client             emqx.Client
+	qos                byte
+	connAck            chan int64
+	delChanCallback    func()
+	delAllChanCallback func()
 }
 
 type ChannelStatus uint8
@@ -85,6 +94,7 @@ func newEmq(pluginId string, client emqx.Client, qos byte) *emq {
 		pluginId:  pluginId,
 		client:    client,
 		qos:       qos,
+		connAck:   make(chan int64, 1),
 	}
 }
 
@@ -93,11 +103,12 @@ func (e emq) commandsSubscribe(c chan subscribe) {
 		operate := gjson.Get(string(message.Payload()), "operate").String()
 		operateId := gjson.Get(string(message.Payload()), "operateId").Int()
 		switch command(operate) {
-		//不需要做任何操作的简单响应指令可放在这
 		case CmdSyncChannelTagStart:
 			e.syncChannelTagStartResp(operateId)
 		case CmdSyncChannelTagEnd:
 			e.syncChannelTagEndResponse(operateId)
+		case CmdConnectACK:
+			e.connAck <- operateId
 		default:
 			sub := subscribe{
 				Operate:   operate,
@@ -110,19 +121,26 @@ func (e emq) commandsSubscribe(c chan subscribe) {
 
 }
 
-//func (e emq) connectWithRespTimeout(version string, t time.Duration) {
-//
-//	e.connect(version)
-//	e.client.Subscribe(downTopic+"/"+e.pluginId, e.qos, func(client emqx.Client, message emqx.Message) {
-//		operate := gjson.Get(string(message.Payload()), "operate").String()
-//		operateId := gjson.Get(string(message.Payload()), "operateId").Int()
-//		if command(operate) == CmdConnectACK {
-//
-//		}
-//	})
-//
-//	e.client.Unsubscribe(downTopic + "/" + e.pluginId)
-//}
+func (e emq) connectRespWithTimeout(version string, timeout int) error {
+	conOpId, err := e.connectReturnOperateId(version)
+	if err != nil {
+		return err
+	}
+
+	t := time.NewTimer(time.Duration(timeout) * time.Second)
+	select {
+	case opId := <-e.connAck:
+		if opId != conOpId {
+			return ErrOperateIdNotMatched
+		}
+		return nil
+	case <-t.C:
+		return ErrTimeoutResponse
+	}
+
+	return nil
+
+}
 
 func (e emq) heartBeat() error {
 	h := baseReq{
@@ -169,15 +187,30 @@ func (e emq) connect(ver string) error {
 	return nil
 }
 
-//func (e emq) connectWithRespTimeOut(ver string, timeout time.Duration) error {
-//
-//	if err := e.connect(ver); err != nil {
-//		return err
-//	}
-//
-//	t := time.NewTimer(timeout * time.Second)
-//	e.commandsSubscribe()
-//}
+func (e emq) connectReturnOperateId(ver string) (int64, error) {
+	if ver == "" {
+		return 0, fmt.Errorf("协议组件版本参数不能为空")
+	}
+
+	opId := atomic.AddInt64(&e.operateId, 1)
+	connect := baseReq{
+		Operate:   CmdConnect,
+		OperateId: opId,
+		Version:   version,
+		Data: map[string]string{
+			"pid":     strconv.Itoa(os.Getpid()),
+			"version": ver,
+		},
+	}
+	body, err := json.Marshal(connect)
+	if err != nil {
+		return 0, err
+	}
+	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
+		return 0, err
+	}
+	return opId, nil
+}
 
 func (e emq) syncChannelTagStart() error {
 	type req struct {

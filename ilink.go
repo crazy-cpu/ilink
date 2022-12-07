@@ -33,7 +33,7 @@ var (
 )
 
 type ILink struct {
-	OperateId int64
+	operateId int64
 	qos       byte
 	pluginId  string
 	cli       interface{}
@@ -72,14 +72,29 @@ func (ilink ILink) CommandsSubscribe() (c <-chan subscribe) {
 	return nil
 }
 
-//func (ilink ILink) Sync(version string) error {
-//	if ilink.cli == nil {
-//		return ErrClientNull
-//	}
-//	if err := ilink.Connect(version); err != nil {
-//		return err
-//	}
-//}
+// PluginConnectGateway block function
+func (ilink ILink) PluginConnectGateway(version string) (<-chan subscribe, error) {
+	if mq != nil {
+		return ilink.buffer, nil
+	}
+
+	if ilink.protocol == ProtocolMqtt {
+		if ilink.cli == nil {
+			return ilink.buffer, ErrClientNull
+		}
+
+		e := newEmq(ilink.pluginId, ilink.cli.(emqx.Client), ilink.qos)
+
+		e.commandsSubscribe(ilink.buffer)
+		if err := e.connectRespWithTimeout(version, 5); err != nil {
+			return ilink.buffer, err
+		}
+
+		ilink.HeartBeat()
+
+	}
+	return ilink.buffer, nil
+}
 
 //HeartBeat 默认30秒一次
 func (ilink ILink) HeartBeat() error {
@@ -150,7 +165,7 @@ func (ilink ILink) DeleteAllChannelResponse(operateId int64) error {
 	return nil
 }
 
-func (ilink ILink) syncChannelTagEndResponse(operateId int64) error {
+func (ilink ILink) SyncChannelTagEndResponse(operateId int64) error {
 	if ilink.cli == nil {
 		return ErrClientNull
 	}
@@ -162,7 +177,7 @@ func (ilink ILink) syncChannelTagEndResponse(operateId int64) error {
 	return nil
 }
 
-func (ilink ILink) getChannelStatusRes(channelId string, status ChannelStatus) error {
+func (ilink ILink) GetChannelStatusRes(channelId string, status ChannelStatus) error {
 	if ilink.cli == nil {
 		return ErrClientNull
 	}
@@ -174,7 +189,7 @@ func (ilink ILink) getChannelStatusRes(channelId string, status ChannelStatus) e
 	return nil
 }
 
-func (ilink ILink) channelStatusUp(channelId string, status ChannelStatus) error {
+func (ilink ILink) ChannelStatusUp(channelId string, status ChannelStatus) error {
 	if ilink.cli == nil {
 		return ErrClientNull
 	}
@@ -186,7 +201,7 @@ func (ilink ILink) channelStatusUp(channelId string, status ChannelStatus) error
 	return nil
 }
 
-func (ilink ILink) tagReadResp(channelId string, status ChannelStatus) error {
+func (ilink ILink) TagReadResp(channelId string, status ChannelStatus) error {
 	if ilink.cli == nil {
 		return ErrClientNull
 	}
@@ -219,7 +234,7 @@ func NewMqtt(Ip string, port int, qos byte, pluginId string) *ILink {
 	if err != nil {
 		return nil
 	}
-	mqttiLink = &ILink{OperateId: 0, pluginId: pluginId, cli: c, protocol: ProtocolMqtt, buffer: make(chan subscribe, 100), qos: qos}
+	mqttiLink = &ILink{operateId: 0, pluginId: pluginId, cli: c, protocol: ProtocolMqtt, buffer: make(chan subscribe, 100), qos: qos}
 	return mqttiLink
 }
 
