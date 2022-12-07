@@ -2,7 +2,6 @@ package ilink
 
 import (
 	"errors"
-	"fmt"
 	emqx "github.com/eclipse/paho.mqtt.golang"
 	"time"
 )
@@ -42,13 +41,12 @@ type ILink struct {
 }
 
 type subscribe struct {
-	Operate   string
+	Operate   command
 	OperateId int64
 	Body      []byte
 }
 
 type Communication interface {
-	HeartBeat() error                                                       //心跳上报
 	Connect() error                                                         //插件连接网关
 	SyncChannelTagStart() error                                             //同步CHANNEL和TAG通知
 	SyncChannelTagEndResponse() error                                       //同步结束响应
@@ -62,66 +60,58 @@ type Communication interface {
 
 }
 
-func (ilink ILink) CommandsSubscribe() (c <-chan subscribe) {
-	if ilink.protocol == ProtocolMqtt {
-		mqtt := emq{pluginId: ilink.pluginId, client: ilink.cli.(emqx.Client)}
-		mqtt.commandsSubscribe(ilink.buffer)
-		return ilink.buffer
-	}
-
-	return nil
+func (ilink ILink) Subscribe() (c <-chan subscribe) {
+	return ilink.buffer
 }
 
 // PluginConnectGateway block function
-func (ilink ILink) PluginConnectGateway(version string) (<-chan subscribe, error) {
-	if mq != nil {
-		return ilink.buffer, nil
-	}
-
-	if ilink.protocol == ProtocolMqtt {
-		if ilink.cli == nil {
-			return ilink.buffer, ErrClientNull
-		}
-
-		e := newEmq(ilink.pluginId, ilink.cli.(emqx.Client), ilink.qos)
-
-		e.commandsSubscribe(ilink.buffer)
-		if err := e.connectRespWithTimeout(version, 5); err != nil {
-			return ilink.buffer, err
-		}
-
-		ilink.HeartBeat()
-
-	}
-	return ilink.buffer, nil
-}
+//func (ilink ILink) PluginConnectGateway(version string) (<-chan subscribe, error) {
+//	if mq != nil {
+//		return ilink.buffer, nil
+//	}
+//
+//	if ilink.protocol == ProtocolMqtt {
+//		if ilink.cli == nil {
+//			return ilink.buffer, ErrClientNull
+//		}
+//
+//		mq.commandsSubscribe(ilink.buffer)
+//		if err := mq.connect(version); err != nil {
+//			return ilink.buffer, err
+//		}
+//
+//		ilink.HeartBeat()
+//
+//	}
+//	return ilink.buffer, nil
+//}
 
 //HeartBeat 默认30秒一次
-func (ilink ILink) HeartBeat() error {
-	if ilink.cli == nil {
-		return ErrClientNull
-	}
-	if ilink.protocol == ProtocolMqtt {
-		mqtt := newEmq(ilink.pluginId, ilink.cli.(emqx.Client), ilink.qos)
-		t := time.NewTicker(30 * time.Second)
-		for {
-			<-t.C
-			if err := mqtt.heartBeat(); err != nil {
-				return err
-			}
-		}
-
-	}
-
-	return fmt.Errorf("暂不支持的协议%v", ilink.protocol)
-}
+//func (ilink ILink) HeartBeat() error {
+//	if ilink.cli == nil {
+//		return ErrClientNull
+//	}
+//	if ilink.protocol == ProtocolMqtt {
+//		t := time.NewTicker(30 * time.Second)
+//		go func() {
+//			for {
+//				<-t.C
+//				mq.heartBeat()
+//
+//			}
+//		}()
+//
+//	}
+//
+//	return fmt.Errorf("暂不支持的协议%v", ilink.protocol)
+//}
 
 func (ilink ILink) Connect(ver string) error {
 	if ilink.cli == nil {
 		return ErrClientNull
 	}
 	if ilink.protocol == ProtocolMqtt {
-		if err := newEmq(ilink.pluginId, ilink.cli.(emqx.Client), ilink.qos).connect(ver); err != nil {
+		if err := mq.connect(ver); err != nil {
 			return err
 		}
 
@@ -134,7 +124,7 @@ func (ilink ILink) SyncChannelTagStart() error {
 		return ErrClientNull
 	}
 	if ilink.protocol == ProtocolMqtt {
-		if err := newEmq(ilink.pluginId, ilink.cli.(emqx.Client), ilink.qos).syncChannelTagStart(); err != nil {
+		if err := mq.syncChannelTagStart(); err != nil {
 			return err
 		}
 	}
@@ -146,7 +136,7 @@ func (ilink ILink) DeleteChannelResponse(operateId int64) error {
 		return ErrClientNull
 	}
 	if ilink.protocol == ProtocolMqtt {
-		if err := newEmq(ilink.pluginId, ilink.cli.(emqx.Client), ilink.qos).deleteChannelRes(operateId); err != nil {
+		if err := mq.deleteChannelRes(operateId); err != nil {
 			return err
 		}
 	}
@@ -158,7 +148,7 @@ func (ilink ILink) DeleteAllChannelResponse(operateId int64) error {
 		return ErrClientNull
 	}
 	if ilink.protocol == ProtocolMqtt {
-		if err := newEmq(ilink.pluginId, ilink.cli.(emqx.Client), ilink.qos).deleteAllChannelRes(operateId); err != nil {
+		if err := mq.deleteAllChannelRes(operateId); err != nil {
 			return err
 		}
 	}
@@ -170,7 +160,7 @@ func (ilink ILink) SyncChannelTagEndResponse(operateId int64) error {
 		return ErrClientNull
 	}
 	if ilink.protocol == ProtocolMqtt {
-		if err := newEmq(ilink.pluginId, ilink.cli.(emqx.Client), ilink.qos).syncChannelTagEndResponse(operateId); err != nil {
+		if err := mq.syncChannelTagEndResponse(operateId); err != nil {
 			return err
 		}
 	}
@@ -182,7 +172,7 @@ func (ilink ILink) GetChannelStatusRes(channelId string, status ChannelStatus) e
 		return ErrClientNull
 	}
 	if ilink.protocol == ProtocolMqtt {
-		if err := newEmq(ilink.pluginId, ilink.cli.(emqx.Client), ilink.qos).getChannelStatusRes(channelId, status); err != nil {
+		if err := mq.getChannelStatusRes(channelId, status); err != nil {
 			return err
 		}
 	}
@@ -194,7 +184,7 @@ func (ilink ILink) ChannelStatusUp(channelId string, status ChannelStatus) error
 		return ErrClientNull
 	}
 	if ilink.protocol == ProtocolMqtt {
-		if err := newEmq(ilink.pluginId, ilink.cli.(emqx.Client), ilink.qos).channelStatusUp(channelId, status); err != nil {
+		if err := mq.channelStatusUp(channelId, status); err != nil {
 			return err
 		}
 	}
@@ -206,7 +196,7 @@ func (ilink ILink) TagReadResp(channelId string, status ChannelStatus) error {
 		return ErrClientNull
 	}
 	if ilink.protocol == ProtocolMqtt {
-		if err := newEmq(ilink.pluginId, ilink.cli.(emqx.Client), ilink.qos).channelStatusUp(channelId, status); err != nil {
+		if err := mq.channelStatusUp(channelId, status); err != nil {
 			return err
 		}
 	}
@@ -218,7 +208,7 @@ func (ilink ILink) TagUp(channelId string, tagId string, value string, quality b
 		return ErrClientNull
 	}
 	if ilink.protocol == ProtocolMqtt {
-		if err := newEmq(ilink.pluginId, ilink.cli.(emqx.Client), ilink.qos).tagUp(channelId, tagId, value, quality); err != nil {
+		if err := mq.tagUp(channelId, tagId, value, quality); err != nil {
 			return err
 		}
 	}
@@ -235,6 +225,23 @@ func NewMqtt(Ip string, port int, qos byte, pluginId string) *ILink {
 		return nil
 	}
 	mqttiLink = &ILink{operateId: 0, pluginId: pluginId, cli: c, protocol: ProtocolMqtt, buffer: make(chan subscribe, 100), qos: qos}
+	if err = newEmq(mqttiLink.pluginId, mqttiLink.cli.(emqx.Client), mqttiLink.qos); err != nil {
+		return nil
+	}
+
+	//监听下发指令
+	mq.commandsSubscribe(mqttiLink.buffer)
+
+	//定时心跳
+	t := time.NewTicker(30 * time.Second)
+
+	go func() {
+		for {
+			<-t.C
+			mq.heartBeat()
+		}
+	}()
+
 	return mqttiLink
 }
 

@@ -14,19 +14,22 @@ import (
 	"time"
 )
 
+const (
+	timeoutResp = 5
+)
+
 var (
-	ErrOperateIdNotMatched = errors.New("operateId不匹配")
-	ErrTimeoutResponse     = errors.New("响应超时")
+	ErrOperateIdNotMatched    = errors.New("operateId不匹配")
+	ErrTimeoutConnectResponse = errors.New("等待[CONNACK]超时")
+	ErrPluginIdOrClientIsNull = errors.New("pluginId或client参数不能为空")
 )
 
 type emq struct {
-	operateId          int64
-	pluginId           string
-	client             emqx.Client
-	qos                byte
-	connAck            chan int64
-	delChanCallback    func()
-	delAllChanCallback func()
+	operateId int64
+	pluginId  string
+	client    emqx.Client
+	qos       byte
+	connAck   chan int64
 }
 
 type ChannelStatus uint8
@@ -85,17 +88,24 @@ type baseResWithData struct {
 	Data      interface{} `json:"data"`
 }
 
-func newEmq(pluginId string, client emqx.Client, qos byte) *emq {
-	if mq != nil {
-		return mq
+func newEmq(pluginId string, client emqx.Client, qos byte) error {
+	if pluginId == "" || client == nil {
+		return nil
 	}
-	return &emq{
+
+	if mq != nil {
+		return nil
+	}
+
+	mq = &emq{
 		operateId: 0,
 		pluginId:  pluginId,
 		client:    client,
 		qos:       qos,
 		connAck:   make(chan int64, 1),
 	}
+
+	return nil
 }
 
 func (e emq) commandsSubscribe(c chan subscribe) {
@@ -109,36 +119,16 @@ func (e emq) commandsSubscribe(c chan subscribe) {
 			e.syncChannelTagEndResponse(operateId)
 		case CmdConnectACK:
 			e.connAck <- operateId
-		default:
+		case CmdDelChannel, CmdDelAllChannel, CmdTagWrite, CmdTagRead:
 			sub := subscribe{
-				Operate:   operate,
+				Operate:   command(operate),
 				OperateId: operateId,
 				Body:      message.Payload(),
 			}
 			c <- sub
 		}
+
 	})
-
-}
-
-func (e emq) connectRespWithTimeout(version string, timeout int) error {
-	conOpId, err := e.connectReturnOperateId(version)
-	if err != nil {
-		return err
-	}
-
-	t := time.NewTimer(time.Duration(timeout) * time.Second)
-	select {
-	case opId := <-e.connAck:
-		if opId != conOpId {
-			return ErrOperateIdNotMatched
-		}
-		return nil
-	case <-t.C:
-		return ErrTimeoutResponse
-	}
-
-	return nil
 
 }
 
@@ -163,36 +153,13 @@ func (e emq) heartBeat() error {
 	return nil
 }
 
+//connect 带响应超时，默认等待5S
 func (e emq) connect(ver string) error {
 	if ver == "" {
 		return fmt.Errorf("协议组件版本参数不能为空")
 	}
-
-	connect := baseReq{
-		Operate:   CmdConnect,
-		OperateId: atomic.AddInt64(&e.operateId, 1),
-		Version:   version,
-		Data: map[string]string{
-			"pid":     strconv.Itoa(os.Getpid()),
-			"version": ver,
-		},
-	}
-	body, err := json.Marshal(connect)
-	if err != nil {
-		return err
-	}
-	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
-		return err
-	}
-	return nil
-}
-
-func (e emq) connectReturnOperateId(ver string) (int64, error) {
-	if ver == "" {
-		return 0, fmt.Errorf("协议组件版本参数不能为空")
-	}
-
 	opId := atomic.AddInt64(&e.operateId, 1)
+
 	connect := baseReq{
 		Operate:   CmdConnect,
 		OperateId: opId,
@@ -204,12 +171,23 @@ func (e emq) connectReturnOperateId(ver string) (int64, error) {
 	}
 	body, err := json.Marshal(connect)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
-		return 0, err
+		return err
 	}
-	return opId, nil
+
+	t := time.NewTimer(timeoutResp * time.Second)
+	select {
+	case Id := <-e.connAck:
+		if Id != opId {
+			return ErrOperateIdNotMatched
+		}
+		return nil
+	case <-t.C:
+		return ErrTimeoutConnectResponse
+	}
+	return nil
 }
 
 func (e emq) syncChannelTagStart() error {
