@@ -191,7 +191,7 @@ func (e *emq) commandsSubscribe() {
 			//将通道和点位配置转换成合适的格式
 			Config := getChannelTagConfig(message.Payload())
 
-			e.callbackSyncChannelTag(Config, e.upQueue)
+			go e.callbackSyncChannelTag(Config, e.upQueue)
 			e.syncChannelTagEndResponse(operateId)
 		case CmdConnectACK:
 			e.connAck <- operateId
