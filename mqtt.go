@@ -192,6 +192,8 @@ func (e *emq) commandsSubscribe() {
 			Config := getChannelTagConfig(message.Payload())
 
 			go e.callbackSyncChannelTag(Config, e.upQueue)
+			e.syncChannelTagRes(operateId)
+		case CmdSyncChannelTagEnd:
 			e.syncChannelTagEndResponse(operateId)
 		case CmdConnectACK:
 			e.connAck <- operateId
