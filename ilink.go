@@ -64,7 +64,7 @@ type Channel struct {
 	Timeout       int64
 	TimeWait      int64
 	Type          string
-	ChannelConfig interface{}
+	ChannelConfig map[string]string
 }
 
 type Tag struct {

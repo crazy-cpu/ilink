@@ -156,7 +156,11 @@ func getChannelTagConfig(b []byte) ChannelTagConfig {
 	cfg.Timeout = gjson.Get(body, "data.channel.timeout").Int()
 	cfg.TimeWait = gjson.Get(body, "data.channel.timeWait").Int()
 	cfg.Type = gjson.Get(body, "data.channel.type").String()
-	cfg.ChannelConfig = gjson.Get(body, "data.channel.channelConfig").Map()
+
+	channelCfg := gjson.Get(body, "data.channel.channelConfig").Map()
+	for k, v := range channelCfg {
+		cfg.ChannelConfig[k] = v.String()
+	}
 
 	tags := gjson.Get(body, "data.tags").Array()
 	for _, t := range tags {
