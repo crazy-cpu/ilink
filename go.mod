@@ -1,4 +1,4 @@
-module ilink
+module github.com/crazy-cpu/ilink
 
 go 1.18
 
