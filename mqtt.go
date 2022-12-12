@@ -528,7 +528,7 @@ func (e *emq) tagUp(channelId string, TagId string, value string, quality byte) 
 	type TagValue struct {
 		Id string `json:"id"`
 		V  string `json:"v"`
-		Q  byte   `json:"Q"`
+		Q  byte   `json:"q"`
 		Ts int64  `json:"ts"`
 	}
 
