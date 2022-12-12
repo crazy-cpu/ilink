@@ -1,4 +1,4 @@
-module iLink
+module ilink
 
 go 1.18
 
