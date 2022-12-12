@@ -1,8 +1,11 @@
 package ilink
 
 import (
-	"errors"
+	"encoding/json"
 	emqx "github.com/eclipse/paho.mqtt.golang"
+	"github.com/pkg/errors"
+	"io/ioutil"
+	"os"
 	"time"
 )
 
@@ -46,11 +49,43 @@ type subscribe struct {
 	Body      []byte
 }
 
+//ChannelTagConfig 网关下发的通道和点位配置
+type ChannelTagConfig struct {
+	Operate   string
+	OperateId int64
+	Version   string
+	Channel
+	Tags []Tag
+}
+
+type Channel struct {
+	ChannelId     string
+	ChannelName   string
+	Timeout       int64
+	TimeWait      int64
+	Type          string
+	ChannelConfig interface{}
+}
+
+type Tag struct {
+	TagId      string
+	TagPeriod  int64
+	DataType   string
+	Rw         int64
+	AreaType   string
+	AreaParams string
+}
+
 type Communication interface {
-	Connect() error                                                         //插件连接网关
+	Connect(ver string) error                                               //插件连接网关
 	SyncChannelTagStart() error                                             //同步CHANNEL和TAG通知
 	SyncChannelTagEndResponse() error                                       //同步结束响应
 	DeleteChannelResponse() error                                           //删除单个通道响应
+	AddCallbackSyncChannelTag()                                             //新增同步通道和点位回调函数
+	AddCallbackDelChannel()                                                 //新增删除单个通道回调函数
+	AddCallbackDelAllChannel()                                              //新增删除所有通道回调函数
+	AddCallbackTagRead()                                                    //新增点位读回调函数
+	AddCallbackTagWrite()                                                   //新增点位写回调函数
 	DeleteAllChannelResponse() error                                        //删除所有通道响应
 	GetChannelStatusRes(channelId string, status ChannelStatus) error       //获取通道状态
 	ChannelStatusUp() error                                                 //通道状态上报
@@ -60,51 +95,58 @@ type Communication interface {
 
 }
 
+func (ilink ILink) AddCallbackSyncChannelTag(f func(tagConfig ChannelTagConfig, up chan<- TagUp)) {
+	if ilink.cli == nil {
+		return
+	}
+
+	if ilink.protocol == ProtocolMqtt {
+		mq.addCallbackSyncChannelTag(f)
+	}
+}
+
+func (ilink ILink) AddCallbackDelChannel(f func()) {
+	if ilink.cli == nil {
+		return
+	}
+
+	if ilink.protocol == ProtocolMqtt {
+		mq.addCallbackDelChannel(f)
+	}
+}
+
+func (ilink ILink) AddCallbackDelAllChannel(f func()) {
+	if ilink.cli == nil {
+		return
+	}
+
+	if ilink.protocol == ProtocolMqtt {
+		mq.addCallbackDelAllChannel(f)
+	}
+}
+
+func (ilink ILink) AddCallbackTagRead(f func()) {
+	if ilink.cli == nil {
+		return
+	}
+
+	if ilink.protocol == ProtocolMqtt {
+		mq.addCallbackTagRead(f)
+	}
+}
+
+func (ilink ILink) AddCallbackTagWrite(f func()) {
+	if ilink.cli == nil {
+		return
+	}
+	if ilink.protocol == ProtocolMqtt {
+		mq.addCallbackTagWrite(f)
+	}
+}
+
 func (ilink ILink) Subscribe() (c <-chan subscribe) {
 	return ilink.buffer
 }
-
-// PluginConnectGateway block function
-//func (ilink ILink) PluginConnectGateway(version string) (<-chan subscribe, error) {
-//	if mq != nil {
-//		return ilink.buffer, nil
-//	}
-//
-//	if ilink.protocol == ProtocolMqtt {
-//		if ilink.cli == nil {
-//			return ilink.buffer, ErrClientNull
-//		}
-//
-//		mq.commandsSubscribe(ilink.buffer)
-//		if err := mq.connect(version); err != nil {
-//			return ilink.buffer, err
-//		}
-//
-//		ilink.HeartBeat()
-//
-//	}
-//	return ilink.buffer, nil
-//}
-
-//HeartBeat 默认30秒一次
-//func (ilink ILink) HeartBeat() error {
-//	if ilink.cli == nil {
-//		return ErrClientNull
-//	}
-//	if ilink.protocol == ProtocolMqtt {
-//		t := time.NewTicker(30 * time.Second)
-//		go func() {
-//			for {
-//				<-t.C
-//				mq.heartBeat()
-//
-//			}
-//		}()
-//
-//	}
-//
-//	return fmt.Errorf("暂不支持的协议%v", ilink.protocol)
-//}
 
 func (ilink ILink) Connect(ver string) error {
 	if ilink.cli == nil {
@@ -215,22 +257,28 @@ func (ilink ILink) TagUp(channelId string, tagId string, value string, quality b
 	return nil
 }
 
-func NewMqtt(Ip string, port int, qos byte, pluginId string) *ILink {
+func NewMqtt(configPath string) (*ILink, error) {
 	if mqttiLink != nil {
-		return mqttiLink
+		return mqttiLink, nil
 	}
 
-	c, err := newMqtt(Ip, port)
-	if err != nil {
-		return nil
+	if err := getConfigure(configPath); err != nil {
+		return nil, errors.Wrap(err, "getConfigure()")
 	}
-	mqttiLink = &ILink{operateId: 0, pluginId: pluginId, cli: c, protocol: ProtocolMqtt, buffer: make(chan subscribe, 100), qos: qos}
+	c, err := newMqtt(cfg.MqttHost, cfg.MqttPort)
+	if err != nil {
+		return nil, errors.Wrap(err, "newMqtt()")
+	}
+	mqttiLink = &ILink{operateId: 0, pluginId: cfg.ModuleId, cli: c, protocol: ProtocolMqtt, buffer: make(chan subscribe, 100), qos: cfg.MqttQos}
 	if err = newEmq(mqttiLink.pluginId, mqttiLink.cli.(emqx.Client), mqttiLink.qos); err != nil {
-		return nil
+		return nil, errors.Wrap(err, "newEmq()")
 	}
 
 	//监听下发指令
-	mq.commandsSubscribe(mqttiLink.buffer)
+	mq.commandsSubscribe()
+
+	//上报点位采集数据
+	go mq.up()
 
 	//定时心跳
 	t := time.NewTicker(30 * time.Second)
@@ -242,7 +290,38 @@ func NewMqtt(Ip string, port int, qos byte, pluginId string) *ILink {
 		}
 	}()
 
-	return mqttiLink
+	return mqttiLink, nil
+}
+
+type config struct {
+	MqttHost        string `json:"mqttHost"`
+	MqttPort        int    `json:"mqttPort"`
+	MqttQos         byte   `json:"mqttQos"`
+	ModuleId        string `json:"moduleId"`
+	ConnectTimeout  int    `json:"connectTimeout"`
+	HeartbeatPeriod int    `json:"heartbeatPeriod"`
+	RWTimeout       int    `json:"rwTimeout"`
+}
+
+var cfg = &config{}
+
+func getConfigure(filePath string) error {
+	file, err := os.Open(filePath)
+	defer file.Close()
+
+	if err != nil {
+		return errors.Wrap(err, "open config.json failed")
+	}
+
+	body, err := ioutil.ReadAll(file)
+	if err != nil {
+		return errors.Wrap(err, "read config.json failed")
+	}
+	if err := json.Unmarshal(body, cfg); err != nil {
+		return errors.Wrap(err, "json.Unmarshal")
+	}
+	return err
+
 }
 
 func NewTcpILink() *ILink {

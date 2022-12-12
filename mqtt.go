@@ -24,14 +24,28 @@ var (
 	ErrPluginIdOrClientIsNull = errors.New("pluginId或client参数不能为空")
 )
 
+//type callback func()
+
 type emq struct {
-	operateId int64
-	pluginId  string
-	client    emqx.Client
-	qos       byte
-	connAck   chan int64
+	operateId              int64
+	pluginId               string
+	client                 emqx.Client
+	qos                    byte
+	connAck                chan int64
+	callbackSyncChannelTag func(cfg ChannelTagConfig, up chan<- TagUp) //需调用方在每次采集上报时将数据传入Up通道
+	callbackDelChannel     func()
+	callbackDelAllChannel  func()
+	callbackTagWrite       func()
+	callbackTagRead        func()
+	upQueue                chan TagUp
 }
 
+type TagUp struct {
+	ChannelId string
+	TagId     string
+	Value     string
+	Quality   byte
+}
 type ChannelStatus uint8
 type TagsQuality uint8
 
@@ -103,36 +117,101 @@ func newEmq(pluginId string, client emqx.Client, qos byte) error {
 		client:    client,
 		qos:       qos,
 		connAck:   make(chan int64, 1),
+		upQueue:   make(chan TagUp, 1024),
 	}
 
 	return nil
 }
 
-func (e emq) commandsSubscribe(c chan subscribe) {
+func (e *emq) addCallbackSyncChannelTag(f func(tagConfig ChannelTagConfig, up chan<- TagUp)) {
+	e.callbackSyncChannelTag = f
+}
+
+func (e *emq) addCallbackDelChannel(f func()) {
+	e.callbackDelChannel = f
+}
+
+func (e *emq) addCallbackDelAllChannel(f func()) {
+	e.callbackDelAllChannel = f
+}
+
+func (e *emq) addCallbackTagWrite(f func()) {
+	e.callbackTagWrite = f
+}
+
+func (e *emq) addCallbackTagRead(f func()) {
+	e.callbackTagRead = f
+}
+
+func getChannelTagConfig(b []byte) ChannelTagConfig {
+	body := string(b)
+	cfg := ChannelTagConfig{}
+
+	cfg.Operate = gjson.Get(body, "operate").String()
+	cfg.OperateId = gjson.Get(body, "operateId").Int()
+	cfg.Version = gjson.Get(body, "version").String()
+
+	cfg.ChannelId = gjson.Get(body, "data.channel.channelId").String()
+	cfg.ChannelName = gjson.Get(body, "data.channel.channelName").String()
+	cfg.Timeout = gjson.Get(body, "data.channel.timeout").Int()
+	cfg.TimeWait = gjson.Get(body, "data.channel.timeWait").Int()
+	cfg.Type = gjson.Get(body, "data.channel.type").String()
+	cfg.ChannelConfig = gjson.Get(body, "data.channel.channelConfig").Map()
+
+	tags := gjson.Get(body, "data.tags").Array()
+	for _, t := range tags {
+		cfg.Tags = append(cfg.Tags, Tag{
+			TagId:      gjson.Get(t.String(), "tagId").String(),
+			TagPeriod:  gjson.Get(t.String(), "tagPeriod").Int(),
+			DataType:   gjson.Get(t.String(), "dataType").String(),
+			Rw:         gjson.Get(t.String(), "rw").Int(),
+			AreaType:   gjson.Get(t.String(), "areaType").String(),
+			AreaParams: gjson.Get(t.String(), "areaParams").String(),
+		})
+	}
+
+	return cfg
+
+}
+
+func (e *emq) up() {
+	for {
+		body := <-e.upQueue
+		e.tagUp(body.ChannelId, body.TagId, body.Value, body.Quality)
+	}
+}
+func (e *emq) commandsSubscribe() {
 	e.client.Subscribe(downTopic+"/"+e.pluginId, e.qos, func(client emqx.Client, message emqx.Message) {
 		operate := gjson.Get(string(message.Payload()), "operate").String()
 		operateId := gjson.Get(string(message.Payload()), "operateId").Int()
 		switch command(operate) {
 		case CmdSyncChannelTagStart:
 			e.syncChannelTagStartResp(operateId)
-		case CmdSyncChannelTagEnd:
+		case CmdSyncChannelTag:
+			//将通道和点位配置转换成合适的格式
+			Config := getChannelTagConfig(message.Payload())
+
+			e.callbackSyncChannelTag(Config, e.upQueue)
 			e.syncChannelTagEndResponse(operateId)
 		case CmdConnectACK:
 			e.connAck <- operateId
-		case CmdDelChannel, CmdDelAllChannel, CmdTagWrite, CmdTagRead:
-			sub := subscribe{
-				Operate:   command(operate),
-				OperateId: operateId,
-				Body:      message.Payload(),
-			}
-			c <- sub
+		case CmdDelChannel:
+			e.callbackDelChannel()
+			e.deleteChannelRes(operateId)
+		case CmdDelAllChannel:
+			e.callbackDelAllChannel()
+			e.deleteAllChannelRes(operateId)
+		case CmdTagWrite:
+			e.callbackTagWrite()
+		case CmdTagRead:
+			e.callbackTagRead()
 		}
 
 	})
 
 }
 
-func (e emq) heartBeat() error {
+func (e *emq) heartBeat() error {
 	h := baseReq{
 		Operate:   CmdHeartBeat,
 		OperateId: atomic.AddInt64(&e.operateId, 1),
@@ -154,7 +233,7 @@ func (e emq) heartBeat() error {
 }
 
 //connect 带响应超时，默认等待5S
-func (e emq) connect(ver string) error {
+func (e *emq) connect(ver string) error {
 	if ver == "" {
 		return fmt.Errorf("协议组件版本参数不能为空")
 	}
@@ -190,7 +269,7 @@ func (e emq) connect(ver string) error {
 	return nil
 }
 
-func (e emq) syncChannelTagStart() error {
+func (e *emq) syncChannelTagStart() error {
 	type req struct {
 		Operate   command `json:"operate"`
 		OperateId int64   `json:"operateId"`
@@ -214,7 +293,7 @@ func (e emq) syncChannelTagStart() error {
 	return nil
 }
 
-func (e emq) syncChannelTagStartResp(operateId int64) error {
+func (e *emq) syncChannelTagStartResp(operateId int64) error {
 	res := baseRes{
 		Operate:   CmdSyncChannelTagStartRes,
 		OperateId: operateId,
@@ -230,7 +309,7 @@ func (e emq) syncChannelTagStartResp(operateId int64) error {
 	return nil
 }
 
-func (e emq) syncChannelTagEndResponse(operateId int64) error {
+func (e *emq) syncChannelTagEndResponse(operateId int64) error {
 	base := baseRes{
 		Operate:   CmdSyncChannelTagEndRes,
 		OperateId: operateId,
@@ -249,7 +328,7 @@ func (e emq) syncChannelTagEndResponse(operateId int64) error {
 	return nil
 }
 
-func (e emq) syncChannelTagRes(operateId int64) error {
+func (e *emq) syncChannelTagRes(operateId int64) error {
 	base := baseRes{
 		Operate:   CmdSyncChannelTagRes,
 		OperateId: operateId,
@@ -268,7 +347,7 @@ func (e emq) syncChannelTagRes(operateId int64) error {
 	return nil
 }
 
-func (e emq) deleteChannelRes(operateId int64) error {
+func (e *emq) deleteChannelRes(operateId int64) error {
 	base := baseRes{
 		Operate:   CmdDelChannelRes,
 		OperateId: operateId,
@@ -285,7 +364,7 @@ func (e emq) deleteChannelRes(operateId int64) error {
 	return nil
 }
 
-func (e emq) deleteAllChannelRes(operateId int64) error {
+func (e *emq) deleteAllChannelRes(operateId int64) error {
 	res := baseRes{
 		Operate:   CmdDelAllChannelRes,
 		OperateId: operateId,
@@ -302,7 +381,7 @@ func (e emq) deleteAllChannelRes(operateId int64) error {
 	return nil
 }
 
-func (e emq) getChannelStatusRes(channelId string, stat ChannelStatus) error {
+func (e *emq) getChannelStatusRes(channelId string, stat ChannelStatus) error {
 	if channelId == "" || reflect.ValueOf(stat).IsNil() {
 		return fmt.Errorf("channelId或status参数不能为空")
 	}
@@ -349,7 +428,7 @@ type Tags struct {
 	Code int    `json:"code"`
 }
 
-func (e emq) tagWriteRes(channelId string) error {
+func (e *emq) tagWriteRes(channelId string) error {
 	var tags []Tags
 	tags = append(tags, Tags{
 		Id: channelId,
@@ -380,7 +459,7 @@ type tagValue struct {
 	Code int    `json:"code"`
 }
 
-func (e emq) tagReadRes(channelId string, value string, quality byte) error {
+func (e *emq) tagReadRes(channelId string, value string, quality byte) error {
 	var tags []tagValue
 	tags = append(tags, tagValue{
 		Id:   channelId,
@@ -407,7 +486,7 @@ func (e emq) tagReadRes(channelId string, value string, quality byte) error {
 	return nil
 }
 
-func (e emq) channelStatusUp(channelId string, status ChannelStatus) error {
+func (e *emq) channelStatusUp(channelId string, status ChannelStatus) error {
 
 	type Status struct {
 		Id         string        `json:"id"`
@@ -443,7 +522,7 @@ func (e emq) channelStatusUp(channelId string, status ChannelStatus) error {
 	return nil
 }
 
-func (e emq) tagUp(channelId string, TagId string, value string, quality byte) error {
+func (e *emq) tagUp(channelId string, TagId string, value string, quality byte) error {
 	type TagValue struct {
 		Id string `json:"id"`
 		V  string `json:"v"`
