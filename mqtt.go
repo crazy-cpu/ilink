@@ -147,6 +147,7 @@ func getChannelTagConfig(b []byte) ChannelTagConfig {
 	body := string(b)
 	cfg := ChannelTagConfig{}
 
+	cfg.ChannelConfig = make(map[string]string)
 	cfg.Operate = gjson.Get(body, "operate").String()
 	cfg.OperateId = gjson.Get(body, "operateId").Int()
 	cfg.Version = gjson.Get(body, "version").String()
