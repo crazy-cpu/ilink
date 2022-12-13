@@ -33,8 +33,8 @@ type emq struct {
 	qos                    byte
 	connAck                chan int64
 	callbackSyncChannelTag func(cfg ChannelTagConfig, up chan<- TagUp) //需调用方在每次采集上报时将数据传入Up通道
-	callbackDelChannel     func()
-	callbackDelAllChannel  func()
+	callbackDelChannel     func(channelId string)
+	callbackDelAllChannel  func(channelId string)
 	callbackTagWrite       func()
 	callbackTagRead        func()
 	upQueue                chan TagUp
@@ -127,11 +127,11 @@ func (e *emq) addCallbackSyncChannelTag(f func(tagConfig ChannelTagConfig, up ch
 	e.callbackSyncChannelTag = f
 }
 
-func (e *emq) addCallbackDelChannel(f func()) {
+func (e *emq) addCallbackDelChannel(f func(channelId string)) {
 	e.callbackDelChannel = f
 }
 
-func (e *emq) addCallbackDelAllChannel(f func()) {
+func (e *emq) addCallbackDelAllChannel(f func(channelId string)) {
 	e.callbackDelAllChannel = f
 }
 
@@ -203,10 +203,12 @@ func (e *emq) commandsSubscribe() {
 		case CmdConnectACK:
 			e.connAck <- operateId
 		case CmdDelChannel:
-			e.callbackDelChannel()
+			channelId := gjson.Get(string(message.Payload()), "data.channelId").String()
+			e.callbackDelChannel(channelId)
 			e.deleteChannelRes(operateId)
 		case CmdDelAllChannel:
-			e.callbackDelAllChannel()
+			channelId := gjson.Get(string(message.Payload()), "data.channelId").String()
+			e.callbackDelAllChannel(channelId)
 			e.deleteAllChannelRes(operateId)
 		case CmdTagWrite:
 			e.callbackTagWrite()

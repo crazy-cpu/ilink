@@ -82,8 +82,8 @@ type Communication interface {
 	SyncChannelTagEndResponse() error                                       //同步结束响应
 	DeleteChannelResponse() error                                           //删除单个通道响应
 	AddCallbackSyncChannelTag()                                             //新增同步通道和点位回调函数
-	AddCallbackDelChannel()                                                 //新增删除单个通道回调函数
-	AddCallbackDelAllChannel()                                              //新增删除所有通道回调函数
+	AddCallbackDelChannel(channelId string)                                 //新增删除单个通道回调函数
+	AddCallbackDelAllChannel(channelId string)                              //新增删除所有通道回调函数
 	AddCallbackTagRead()                                                    //新增点位读回调函数
 	AddCallbackTagWrite()                                                   //新增点位写回调函数
 	DeleteAllChannelResponse() error                                        //删除所有通道响应
@@ -105,7 +105,7 @@ func (ilink ILink) AddCallbackSyncChannelTag(f func(tagConfig ChannelTagConfig, 
 	}
 }
 
-func (ilink ILink) AddCallbackDelChannel(f func()) {
+func (ilink ILink) AddCallbackDelChannel(f func(channelId string)) {
 	if ilink.cli == nil {
 		return
 	}
@@ -115,7 +115,7 @@ func (ilink ILink) AddCallbackDelChannel(f func()) {
 	}
 }
 
-func (ilink ILink) AddCallbackDelAllChannel(f func()) {
+func (ilink ILink) AddCallbackDelAllChannel(f func(channelId string)) {
 	if ilink.cli == nil {
 		return
 	}
