@@ -562,7 +562,7 @@ func (e *emq) tagUp(channelId string, TagId string, value string, quality byte) 
 					Id: TagId,
 					V:  value,
 					Q:  quality,
-					Ts: time.Now().Unix(),
+					Ts: time.Now().UnixMilli(),
 				},
 			},
 		},
