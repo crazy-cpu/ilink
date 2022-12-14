@@ -229,7 +229,7 @@ func (e *emq) heartBeat() error {
 		OperateId: atomic.AddInt64(&e.operateId, 1),
 		Version:   version,
 		Data: map[string]int64{
-			"time":      time.Now().Unix(),
+			"time":      time.Now().UnixMilli(),
 			"runStatus": 2,
 		},
 	}
