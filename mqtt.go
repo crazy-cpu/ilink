@@ -24,7 +24,7 @@ var (
 	ErrPluginIdOrClientIsNull = errors.New("pluginId或client参数不能为空")
 )
 
-//type callback func()
+var channelCount = make(map[string]int) //记录通道的启动次数
 
 type emq struct {
 	operateId              int64
@@ -195,17 +195,20 @@ func (e *emq) commandsSubscribe() {
 		case CmdSyncChannelTag:
 			//将通道和点位配置转换成合适的格式
 			Config := getChannelTagConfig(message.Payload())
-
 			go e.callbackSyncChannelTag(Config, e.upQueue)
 			e.syncChannelTagRes(operateId)
 		case CmdSyncChannelTagEnd:
 			e.syncChannelTagEndResponse(operateId)
+			channelId := gjson.Get(string(message.Payload()), "data.channelId").String()
+			channelCount[channelId] += 1
+			e.channelStatusUp(channelId, 1)
 		case CmdConnectACK:
 			e.connAck <- operateId
 		case CmdDelChannel:
 			channelId := gjson.Get(string(message.Payload()), "data.channelId").String()
 			e.callbackDelChannel(channelId)
 			e.deleteChannelRes(operateId)
+			e.channelStatusUp(channelId, 0)
 		case CmdDelAllChannel:
 			channelId := gjson.Get(string(message.Payload()), "data.channelId").String()
 			e.callbackDelAllChannel(channelId)
@@ -505,9 +508,10 @@ func (e *emq) channelStatusUp(channelId string, status ChannelStatus) error {
 	}
 	var tags []Status
 	tags = append(tags, Status{
-		Id:        channelId,
-		Status:    status,
-		StartTime: time.Now().Unix(),
+		Id:         channelId,
+		Status:     status,
+		StartCount: channelCount[channelId],
+		StartTime:  time.Now().UnixMilli(),
 	})
 
 	base := baseResWithData{
