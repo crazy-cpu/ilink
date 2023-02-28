@@ -1,11 +1,13 @@
 package ilink
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/crazy-cpu/ilink/messagebus/mqtt"
 	emqx "github.com/eclipse/paho.mqtt.golang"
+
+	//emqx "github.com/eclipse/paho.mqtt.golang"
 	"github.com/tidwall/gjson"
 	"os"
 	"reflect"
@@ -29,7 +31,7 @@ var channelCount = make(map[string]int) //记录通道的启动次数
 type emq struct {
 	operateId              int64
 	pluginId               string
-	client                 emqx.Client
+	client                 *mqtt.Client
 	qos                    byte
 	connAck                chan int64
 	callbackSyncChannelTag func(cfg ChannelTagConfig, up chan<- TagUp) //需调用方在每次采集上报时将数据传入Up通道
@@ -61,25 +63,20 @@ const (
 	Quality = TagsQuality(0)
 )
 
-func newMqtt(ip string, port int, auth ...string) (emqx.Client, error) {
+func newMqtt(ip string, port int, auth ...string) (mqtt.Client, error) {
+	var userName, password string
+	if auth[0] != "" && auth[1] != "" {
+		userName = auth[0]
+		password = auth[1]
+	}
 	p := strconv.Itoa(port)
-	ops := emqx.NewClientOptions().AddBroker("tcp://" + ip + ":" + p).
-		SetTLSConfig(&tls.Config{InsecureSkipVerify: true}).
-		SetAutoReconnect(true).SetProtocolVersion(4).
-		SetCleanSession(true)
-
-	if auth != nil && len(auth) == 2 {
-		ops.SetUsername(auth[0])
-		ops.SetPassword(auth[1])
+	C := mqtt.Client{
+		Server:   "tcp://" + ip + ":" + p,
+		UserName: userName,
+		Password: password,
 	}
-
-	client := emqx.NewClient(ops)
-
-	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		return nil, token.Error()
-	}
-
-	return client, nil
+	C.Connect()
+	return C, nil
 }
 
 type baseReq struct {
@@ -102,7 +99,7 @@ type baseResWithData struct {
 	Data      interface{} `json:"data"`
 }
 
-func newEmq(pluginId string, client emqx.Client, qos byte) error {
+func newEmq(pluginId string, client *mqtt.Client, qos byte) error {
 	if pluginId == "" || client == nil {
 		return nil
 	}
@@ -186,44 +183,83 @@ func (e *emq) up() {
 	}
 }
 func (e *emq) commandsSubscribe() {
-	e.client.Subscribe(downTopic+"/"+e.pluginId, e.qos, func(client emqx.Client, message emqx.Message) {
-		operate := gjson.Get(string(message.Payload()), "operate").String()
-		operateId := gjson.Get(string(message.Payload()), "operateId").Int()
-		switch command(operate) {
-		case CmdSyncChannelTagStart:
-			e.syncChannelTagStartResp(operateId)
-		case CmdSyncChannelTag:
-			//将通道和点位配置转换成合适的格式
-			Config := getChannelTagConfig(message.Payload())
-			go e.callbackSyncChannelTag(Config, e.upQueue)
-			e.syncChannelTagRes(operateId)
-		case CmdSyncChannelTagEnd:
-			e.syncChannelTagEndResponse(operateId)
-			channelId := gjson.Get(string(message.Payload()), "data.channelId").String()
-			channelCount[channelId] += 1
-			e.channelStatusUp(channelId, 1)
-		case CmdConnectACK:
-			e.connAck <- operateId
-		case CmdDelChannel:
-			channelId := gjson.Get(string(message.Payload()), "data.channelId").String()
-			e.callbackDelChannel(channelId)
-			e.deleteChannelRes(operateId)
-			e.channelStatusUp(channelId, 0)
-		case CmdDelAllChannel:
-			channelId := gjson.Get(string(message.Payload()), "data.channelId").String()
-			e.callbackDelAllChannel(channelId)
-			e.deleteAllChannelRes(operateId)
-		case CmdTagWrite:
-			e.callbackTagWrite()
-		case CmdTagRead:
-			e.callbackTagRead()
-		}
-
-	})
+	subArgs := mqtt.SubArg{
+		SubTopic: downTopic + "/" + e.pluginId,
+		SubQos:   e.qos,
+		SubCallback: func(client emqx.Client, message emqx.Message) {
+			operate := gjson.Get(string(message.Payload()), "operate").String()
+			operateId := gjson.Get(string(message.Payload()), "operateId").Int()
+			switch command(operate) {
+			case CmdSyncChannelTagStart:
+				e.syncChannelTagStartResp(operateId)
+			case CmdSyncChannelTag:
+				//将通道和点位配置转换成合适的格式
+				Config := getChannelTagConfig(message.Payload())
+				go e.callbackSyncChannelTag(Config, e.upQueue)
+				e.syncChannelTagRes(operateId)
+			case CmdSyncChannelTagEnd:
+				e.syncChannelTagEndResponse(operateId)
+				channelId := gjson.Get(string(message.Payload()), "data.channelId").String()
+				channelCount[channelId] += 1
+				e.channelStatusUp(channelId, 1)
+			case CmdConnectACK:
+				e.connAck <- operateId
+			case CmdDelChannel:
+				channelId := gjson.Get(string(message.Payload()), "data.channelId").String()
+				e.callbackDelChannel(channelId)
+				e.deleteChannelRes(operateId)
+				e.channelStatusUp(channelId, 0)
+			case CmdDelAllChannel:
+				channelId := gjson.Get(string(message.Payload()), "data.channelId").String()
+				e.callbackDelAllChannel(channelId)
+				e.deleteAllChannelRes(operateId)
+			case CmdTagWrite:
+				e.callbackTagWrite()
+			case CmdTagRead:
+				e.callbackTagRead()
+			}
+		},
+	}
+	e.client.Subscribe(subArgs)
+	//e.client.Subscribe(downTopic+"/"+e.pluginId, e.qos, func(client emqx.Client, message emqx.Message) {
+	//	operate := gjson.Get(string(message.Payload()), "operate").String()
+	//	operateId := gjson.Get(string(message.Payload()), "operateId").Int()
+	//	switch command(operate) {
+	//	case CmdSyncChannelTagStart:
+	//		e.syncChannelTagStartResp(operateId)
+	//	case CmdSyncChannelTag:
+	//		//将通道和点位配置转换成合适的格式
+	//		Config := getChannelTagConfig(message.Payload())
+	//		go e.callbackSyncChannelTag(Config, e.upQueue)
+	//		e.syncChannelTagRes(operateId)
+	//	case CmdSyncChannelTagEnd:
+	//		e.syncChannelTagEndResponse(operateId)
+	//		channelId := gjson.Get(string(message.Payload()), "data.channelId").String()
+	//		channelCount[channelId] += 1
+	//		e.channelStatusUp(channelId, 1)
+	//	case CmdConnectACK:
+	//		e.connAck <- operateId
+	//	case CmdDelChannel:
+	//		channelId := gjson.Get(string(message.Payload()), "data.channelId").String()
+	//		e.callbackDelChannel(channelId)
+	//		e.deleteChannelRes(operateId)
+	//		e.channelStatusUp(channelId, 0)
+	//	case CmdDelAllChannel:
+	//		channelId := gjson.Get(string(message.Payload()), "data.channelId").String()
+	//		e.callbackDelAllChannel(channelId)
+	//		e.deleteAllChannelRes(operateId)
+	//	case CmdTagWrite:
+	//		e.callbackTagWrite()
+	//	case CmdTagRead:
+	//		e.callbackTagRead()
+	//	}
+	//
+	//})
 
 }
 
 func (e *emq) heartBeat() error {
+	var err error
 	h := baseReq{
 		Operate:   CmdHeartBeat,
 		OperateId: atomic.AddInt64(&e.operateId, 1),
@@ -237,7 +273,13 @@ func (e *emq) heartBeat() error {
 	if err != nil {
 		return err
 	}
-	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, payload); token.Wait() && token.Error() != nil {
+	pubArgs := mqtt.PubArg{
+		PubQos:      e.qos,
+		PubTopic:    upTopic + "/" + e.pluginId,
+		PubRetained: false,
+		PubPayload:  payload,
+	}
+	if err = e.client.Publish(pubArgs); err != nil {
 		return err
 	}
 
@@ -246,6 +288,7 @@ func (e *emq) heartBeat() error {
 
 //connect 带响应超时，默认等待5S
 func (e *emq) connect(ver string) error {
+	var err error
 	if ver == "" {
 		return fmt.Errorf("协议组件版本参数不能为空")
 	}
@@ -264,7 +307,8 @@ func (e *emq) connect(ver string) error {
 	if err != nil {
 		return err
 	}
-	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
+
+	if err = e.client.Publish(mqtt.PubArg{PubTopic: upTopic + "/" + e.pluginId, PubQos: e.qos, PubRetained: false, PubPayload: body}); err != nil {
 		return err
 	}
 
@@ -282,6 +326,7 @@ func (e *emq) connect(ver string) error {
 }
 
 func (e *emq) syncChannelTagStart() error {
+	var err error
 	type req struct {
 		Operate   command `json:"operate"`
 		OperateId int64   `json:"operateId"`
@@ -298,7 +343,7 @@ func (e *emq) syncChannelTagStart() error {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
+	if err = e.client.Publish(mqtt.PubArg{PubTopic: upTopic + "/" + e.pluginId, PubQos: e.qos, PubRetained: false, PubPayload: body}); err != nil {
 		return err
 	}
 
@@ -306,6 +351,7 @@ func (e *emq) syncChannelTagStart() error {
 }
 
 func (e *emq) syncChannelTagStartResp(operateId int64) error {
+	var err error
 	res := baseRes{
 		Operate:   CmdSyncChannelTagStartRes,
 		OperateId: operateId,
@@ -315,13 +361,14 @@ func (e *emq) syncChannelTagStartResp(operateId int64) error {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
+	if err = e.client.Publish(mqtt.PubArg{PubTopic: upTopic + "/" + e.pluginId, PubQos: e.qos, PubRetained: false, PubPayload: body}); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (e *emq) syncChannelTagEndResponse(operateId int64) error {
+	var err error
 	base := baseRes{
 		Operate:   CmdSyncChannelTagEndRes,
 		OperateId: operateId,
@@ -333,7 +380,7 @@ func (e *emq) syncChannelTagEndResponse(operateId int64) error {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
+	if err = e.client.Publish(mqtt.PubArg{PubTopic: upTopic + "/" + e.pluginId, PubQos: e.qos, PubRetained: false, PubPayload: body}); err != nil {
 		return err
 	}
 
@@ -341,6 +388,7 @@ func (e *emq) syncChannelTagEndResponse(operateId int64) error {
 }
 
 func (e *emq) syncChannelTagRes(operateId int64) error {
+	var err error
 	base := baseRes{
 		Operate:   CmdSyncChannelTagRes,
 		OperateId: operateId,
@@ -352,7 +400,7 @@ func (e *emq) syncChannelTagRes(operateId int64) error {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
+	if err = e.client.Publish(mqtt.PubArg{PubTopic: upTopic + "/" + e.pluginId, PubQos: e.qos, PubRetained: false, PubPayload: body}); err != nil {
 		return err
 	}
 
@@ -360,6 +408,7 @@ func (e *emq) syncChannelTagRes(operateId int64) error {
 }
 
 func (e *emq) deleteChannelRes(operateId int64) error {
+	var err error
 	base := baseRes{
 		Operate:   CmdDelChannelRes,
 		OperateId: operateId,
@@ -370,13 +419,14 @@ func (e *emq) deleteChannelRes(operateId int64) error {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
+	if err = e.client.Publish(mqtt.PubArg{PubTopic: upTopic + "/" + e.pluginId, PubQos: e.qos, PubRetained: false, PubPayload: body}); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (e *emq) deleteAllChannelRes(operateId int64) error {
+	var err error
 	res := baseRes{
 		Operate:   CmdDelAllChannelRes,
 		OperateId: operateId,
@@ -387,13 +437,14 @@ func (e *emq) deleteAllChannelRes(operateId int64) error {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, body); token.Wait() && token.Error() != nil {
+	if err = e.client.Publish(mqtt.PubArg{PubTopic: upTopic + "/" + e.pluginId, PubQos: e.qos, PubRetained: false, PubPayload: body}); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (e *emq) getChannelStatusRes(channelId string, stat ChannelStatus) error {
+	var err error
 	if channelId == "" || reflect.ValueOf(stat).IsNil() {
 		return fmt.Errorf("channelId或status参数不能为空")
 	}
@@ -429,7 +480,7 @@ func (e *emq) getChannelStatusRes(channelId string, stat ChannelStatus) error {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, payload); token.Wait() && token.Error() != nil {
+	if err = e.client.Publish(mqtt.PubArg{PubTopic: upTopic + "/" + e.pluginId, PubQos: e.qos, PubRetained: false, PubPayload: payload}); err != nil {
 		return err
 	}
 	return nil
@@ -441,7 +492,10 @@ type Tags struct {
 }
 
 func (e *emq) tagWriteRes(channelId string) error {
-	var tags []Tags
+	var (
+		err  error
+		tags []Tags
+	)
 	tags = append(tags, Tags{
 		Id: channelId,
 	})
@@ -457,7 +511,7 @@ func (e *emq) tagWriteRes(channelId string) error {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, payload); token.Wait() && token.Error() != nil {
+	if err = e.client.Publish(mqtt.PubArg{PubTopic: upTopic + "/" + e.pluginId, PubQos: e.qos, PubRetained: false, PubPayload: payload}); err != nil {
 		return err
 	}
 
@@ -472,7 +526,10 @@ type tagValue struct {
 }
 
 func (e *emq) tagReadRes(channelId string, value string, quality byte) error {
-	var tags []tagValue
+	var (
+		err  error
+		tags []tagValue
+	)
 	tags = append(tags, tagValue{
 		Id:   channelId,
 		V:    value,
@@ -491,7 +548,7 @@ func (e *emq) tagReadRes(channelId string, value string, quality byte) error {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, payload); token.Wait() && token.Error() != nil {
+	if err = e.client.Publish(mqtt.PubArg{PubTopic: upTopic + "/" + e.pluginId, PubQos: e.qos, PubRetained: false, PubPayload: payload}); err != nil {
 		return err
 	}
 
@@ -506,7 +563,10 @@ func (e *emq) channelStatusUp(channelId string, status ChannelStatus) error {
 		StartCount int           `json:"startCount"`
 		StartTime  int64         `json:"startTime"`
 	}
-	var tags []Status
+	var (
+		err  error
+		tags []Status
+	)
 	tags = append(tags, Status{
 		Id:         channelId,
 		Status:     status,
@@ -528,7 +588,7 @@ func (e *emq) channelStatusUp(channelId string, status ChannelStatus) error {
 		return err
 	}
 
-	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, payload); token.Wait() && token.Error() != nil {
+	if err = e.client.Publish(mqtt.PubArg{PubTopic: upTopic + "/" + e.pluginId, PubQos: e.qos, PubRetained: false, PubPayload: payload}); err != nil {
 		return err
 	}
 
@@ -536,6 +596,7 @@ func (e *emq) channelStatusUp(channelId string, status ChannelStatus) error {
 }
 
 func (e *emq) tagUp(channelId string, TagId string, value string, quality byte) error {
+	var err error
 	type TagValue struct {
 		Id string `json:"id"`
 		V  string `json:"v"`
@@ -576,7 +637,7 @@ func (e *emq) tagUp(channelId string, TagId string, value string, quality byte) 
 		return err
 	}
 
-	if token := e.client.Publish(upTopic+"/"+e.pluginId, e.qos, false, payload); token.Wait() && token.Error() != nil {
+	if err = e.client.Publish(mqtt.PubArg{PubTopic: upTopic + "/" + e.pluginId, PubQos: e.qos, PubRetained: false, PubPayload: payload}); err != nil {
 		return err
 	}
 

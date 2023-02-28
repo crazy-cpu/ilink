@@ -2,7 +2,7 @@ package ilink
 
 import (
 	"encoding/json"
-	emqx "github.com/eclipse/paho.mqtt.golang"
+	"github.com/crazy-cpu/ilink/messagebus/mqtt"
 	"github.com/pkg/errors"
 	"io/ioutil"
 	"os"
@@ -21,6 +21,7 @@ const (
 	JsonBody     = Body(-1)
 	ProtocolMqtt = Protocol(0)
 	ProtocolTcp  = Protocol(1)
+	ProtocolNng  = Protocol(2)
 )
 
 const (
@@ -265,12 +266,13 @@ func NewMqtt(configPath string) (*ILink, error) {
 	if err := getConfigure(configPath); err != nil {
 		return nil, errors.Wrap(err, "getConfigure()")
 	}
+
 	c, err := newMqtt(cfg.MqttHost, cfg.MqttPort)
 	if err != nil {
 		return nil, errors.Wrap(err, "newMqtt()")
 	}
 	mqttiLink = &ILink{operateId: 0, pluginId: cfg.ModuleId, cli: c, protocol: ProtocolMqtt, buffer: make(chan subscribe, 100), qos: cfg.MqttQos}
-	if err = newEmq(mqttiLink.pluginId, mqttiLink.cli.(emqx.Client), mqttiLink.qos); err != nil {
+	if err = newEmq(mqttiLink.pluginId, mqttiLink.cli.(*mqtt.Client), mqttiLink.qos); err != nil {
 		return nil, errors.Wrap(err, "newEmq()")
 	}
 
