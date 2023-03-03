@@ -26,6 +26,8 @@ type PubArg struct {
 	PubPayload  []byte
 }
 
+type PubArgOption func(arg *PubArg)
+
 type SubArg struct {
 	SubTopic    string
 	SubQos      byte
