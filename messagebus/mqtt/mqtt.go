@@ -34,6 +34,7 @@ type SubArg struct {
 	SubCallback mqtt.MessageHandler
 }
 
+// Connect server
 func (C *Client) Connect() {
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(C.Server)
